@@ -1,0 +1,50 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: secreter
+  name: secreter
+  namespace: secreter
+spec:
+  selector:
+    matchLabels:
+      app: secreter
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        seccomp.security.alpha.kubernetes.io/pod: runtime/default
+      labels:
+        app: secreter
+    spec:
+      serviceAccountName: secreter
+      containers:
+      - name: secreter
+        image: amaiz/secreter:latest
+        imagePullPolicy: Always
+        env:
+        - name: WATCH_NAMESPACE # left empty to watch all namespaces
+        - name: OPERATOR_NAME
+          value: secreter
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - all
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmpfs
+      securityContext:
+        runAsUser: 7777777
+        runAsGroup: 7777777
+        fsGroup: 7777777
+        runAsNonRoot: true
+      volumes:
+      - emptyDir: {}
+        name: tmpfs

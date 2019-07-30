@@ -1,0 +1,14 @@
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: secreter
+  namespace: secreter
+subjects:
+- kind: ServiceAccount
+  name: secreter
+  namespace: secreter
+roleRef:
+  kind: Role
+  name: secreter
+  apiGroup: rbac.authorization.k8s.io

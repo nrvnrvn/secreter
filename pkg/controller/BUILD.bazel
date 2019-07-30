@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "add_encryptedsecret.go",
+        "add_secretencryptionconfig.go",
+        "controller.go",
+    ],
+    importpath = "github.com/amaizfinance/secreter/pkg/controller",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/controller/encryptedsecret:go_default_library",
+        "//pkg/controller/secretencryptionconfig:go_default_library",
+        "//vendor/sigs.k8s.io/controller-runtime/pkg/manager:go_default_library",
+    ],
+)

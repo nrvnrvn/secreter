@@ -1,0 +1,62 @@
+---
+kind: pipeline
+name: secreter
+steps:
+
+- name: test
+  image: l.gcr.io/google/bazel:0.28.1
+  commands:
+  - ./hack/build/test.sh
+  volumes:
+  - name: cache
+    path: /root/.cache
+
+- name: build and push docker image
+  image: l.gcr.io/google/bazel:0.28.1
+  environment:
+    DOCKER_AUTH:
+      from_secret: docker-config-json
+  commands:
+  - ./hack/build/push-image.sh
+  volumes:
+  - name: cache
+    path: /root/.cache
+  when:
+    ref:
+    - refs/heads/master
+    - refs/tags/v*
+
+- name: build binaries
+  image: l.gcr.io/google/bazel:0.28.1
+  commands:
+  - ./hack/build/binaries.sh
+  volumes:
+  - name: cache
+    path: /root/.cache
+  when:
+    ref:
+    - refs/tags/v*
+
+- name: release binaries
+  image: plugins/github-release
+  settings:
+    api_key:
+      from_secret: github-release-token
+    files: bazel-bin/*.tgz
+    checksum:
+    - sha512
+  volumes:
+  - name: cache
+    path: /root/.cache
+  when:
+    ref:
+    - refs/tags/v*
+
+volumes:
+- name: cache
+  temp: {}
+---
+kind: signature
+hmac: 6083f8e7a84d7bbb7a9d451adaeb151f7563b0e0ccf69403f1156c4b22c255b4
+
+...
