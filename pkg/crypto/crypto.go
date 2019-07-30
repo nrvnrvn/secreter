@@ -14,8 +14,6 @@
 
 package crypto
 
-import "errors"
-
 // Cipher suites used for encryption.
 // Will always be the first byte of the encrypted message.
 const (
@@ -26,7 +24,7 @@ const (
 	HeaderSize = 1
 )
 
-var ErrInvalidCipherSuite = errors.New("crypto: invalid cipher suite")
+// var ErrInvalidCipherSuite = errors.New("crypto: invalid cipher suite")
 
 // Encrypter is the interface that wraps the basic Encrypt method.
 //

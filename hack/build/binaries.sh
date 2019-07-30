@@ -19,6 +19,7 @@ readonly KUBE_SUPPORTED_CLIENT_PLATFORMS=(
 
 # build secreter cli binaries for multiple platforms
 for platform in "${KUBE_SUPPORTED_CLIENT_PLATFORMS[@]}"; do
+  echo "Building secreter cli for ${platform}"
   bazel build --platforms "@io_bazel_rules_go//go/toolchain:${platform}" //cmd/cli:secreter_pkg
-  mv -f bazel-bin/tar.tgz "bazel-bin/bin-${platform}.tgz"
+  mv -f bazel-bin/cmd/cli/secreter_{pkg,"${platform}"}.tgz
 done

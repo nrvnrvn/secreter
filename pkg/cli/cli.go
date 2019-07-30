@@ -458,6 +458,7 @@ func newEncryptUpdater(configName string, provider k8sv1alpha1.SecretEncryptionP
 	}, nil
 }
 
+// ParseDataSources reads files and literals converting them to a map suitable for encryption.
 func ParseDataSources(fromFile, fromLiteral []string) (data map[string][]byte, err error) {
 	// merge all input data sources into one
 	data = make(map[string][]byte)

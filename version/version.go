@@ -18,6 +18,8 @@ import (
 	"runtime"
 )
 
+// Variables reflect version information for the secreter CLI.
+// All but GoVersion are supposed to be passed via go linker, .e.g. "-ldflags -X"
 var (
 	Version   = "v0.0.0"
 	GitCommit = "unknown"

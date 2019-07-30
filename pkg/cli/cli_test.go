@@ -32,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	k8sv1alpha1 "github.com/amaizfinance/secreter/pkg/apis/k8s/v1alpha1"
-
 	"github.com/amaizfinance/secreter/pkg/crypto/curve25519"
 )
 
@@ -773,8 +772,6 @@ func TestFullCycleEncrypt(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    Serializer
-		want1   EncryptUpdater
 		wantErr bool
 	}{
 		{
@@ -874,8 +871,6 @@ func TestFullCycleUpdate(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    Serializer
-		want1   EncryptUpdater
 		wantErr bool
 	}{
 		{

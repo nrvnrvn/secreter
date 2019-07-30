@@ -57,6 +57,7 @@ import (
 )
 
 const (
+	// KeySize is the size, in bytes, of public and private keys
 	KeySize = 32
 
 	headerOffset             = crypto.HeaderSize

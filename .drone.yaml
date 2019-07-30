@@ -42,7 +42,7 @@ steps:
   settings:
     api_key:
       from_secret: github-release-token
-    files: bazel-bin/*.tgz
+    files: bazel-bin/cmd/cli/*.tgz
     checksum:
     - sha512
   volumes:
@@ -57,6 +57,6 @@ volumes:
   temp: {}
 ---
 kind: signature
-hmac: 6083f8e7a84d7bbb7a9d451adaeb151f7563b0e0ccf69403f1156c4b22c255b4
+hmac: 7373b011bd1cc7a99f8084d82be05ac15a1546bf7d158af8e39eac7a01e29e61
 
 ...

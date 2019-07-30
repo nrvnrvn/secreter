@@ -222,7 +222,7 @@ func (r *ReconcileSecretEncryptionConfig) Reconcile(request reconcile.Request) (
 // hashMapStringBytes returns the base16-encoded BLAKE2b-512 checksum.
 func hashMapStringBytes(m map[string][]byte) string {
 	// sort keys before proceeding
-	var keys []string
+	keys := make([]string, 0, len(m))
 	for key := range m {
 		keys = append(keys, key)
 	}
