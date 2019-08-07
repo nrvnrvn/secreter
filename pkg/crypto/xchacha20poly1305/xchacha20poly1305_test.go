@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"reflect"
 	"testing"
 )
 
@@ -33,7 +34,7 @@ func TestSealOpen(t *testing.T) {
 		want    []byte
 		wantErr bool
 	}{
-		{name: "empty", want: make([]byte, 0)},
+		{name: "empty", wantErr: true},
 		{name: "bad ciphertext", args: args{ciphertext: []byte("lol")}, wantErr: true},
 		{
 			name: "random key",
@@ -71,7 +72,7 @@ func TestSealOpen(t *testing.T) {
 				return
 			}
 			if !bytes.Equal(got, tt.want) {
-				t.Errorf("Open() = %v, want %#v", got, tt.want)
+				t.Errorf("Open() = %v, wantKey %#v", got, tt.want)
 			}
 		})
 	}
@@ -106,7 +107,7 @@ func TestSealOpenDeterministic(t *testing.T) {
 				return
 			}
 			if !bytes.Equal(ciphertext, tt.args.ciphertext) {
-				t.Errorf("\nSeal():\t%v\nwant\t%v", ciphertext, tt.args.ciphertext)
+				t.Errorf("\nSeal():\t%v\nwantKey\t%v", ciphertext, tt.args.ciphertext)
 				return
 			}
 			got, err := Open(tt.args.key, tt.args.ciphertext, tt.args.additionalData)
@@ -117,7 +118,7 @@ func TestSealOpenDeterministic(t *testing.T) {
 			fmt.Println(tt.args.plaintext)
 
 			if !bytes.Equal(got, tt.want) {
-				t.Errorf("Open() = %v, want %#v", got, tt.want)
+				t.Errorf("Open() = %v, wantKey %#v", got, tt.want)
 			}
 		})
 	}
@@ -149,5 +150,36 @@ func BenchmarkDeriveKeyAndNonce(b *testing.B) {
 		if len(nonces)%1000000 == 0 {
 			fmt.Println(len(nonces))
 		}
+	}
+}
+
+func Test_deriveKeyAndNonce(t *testing.T) {
+	type args struct {
+		inputKeyMaterial []byte
+		salt             []byte
+	}
+	tests := []struct {
+		name      string
+		args      args
+		wantKey   []byte
+		wantNonce []byte
+		wantErr   bool
+	}{
+		{name: "empty", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotKey, gotNonce, err := deriveKeyAndNonce(tt.args.inputKeyMaterial, tt.args.salt)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("deriveKeyAndNonce() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotKey, tt.wantKey) {
+				t.Errorf("deriveKeyAndNonce() gotKey = %v, wantKey %v", gotKey, tt.wantKey)
+			}
+			if !reflect.DeepEqual(gotNonce, tt.wantNonce) {
+				t.Errorf("deriveKeyAndNonce() gotNonce = %v, wantNonce %v", gotNonce, tt.wantNonce)
+			}
+		})
 	}
 }

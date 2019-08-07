@@ -30,6 +30,7 @@ go_library(
 go_binary(
     name = "manager",
     embed = [":go_default_library"],
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 
@@ -37,8 +38,8 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 
 go_image(
     name = "manager_image",
-    base = "@distroless_static//image",
     embed = [":go_default_library"],
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 

@@ -30,6 +30,7 @@
 package xchacha20poly1305
 
 import (
+	"errors"
 	"hash"
 	"io"
 
@@ -74,6 +75,10 @@ func Open(key, ciphertext, additionalData []byte) ([]byte, error) {
 }
 
 func deriveKeyAndNonce(inputKeyMaterial, salt []byte) ([]byte, []byte, error) {
+	if len(inputKeyMaterial) == 0 {
+		return nil, nil, errors.New("xchacha20poly1305: key cannot be empty")
+	}
+
 	key := make([]byte, chacha20poly1305.KeySize)
 	nonce := make([]byte, chacha20poly1305.NonceSizeX)
 

@@ -9,6 +9,12 @@
 
 ## Project status: alpha
 
+### Cryptography API
+
+Core cryptography API is freezed and is unlikely to be changed. It is open for extension and adding more providers. Thorough independent security audit is badly needed and welcome!
+
+### Kubernetes API and CLI
+
 The basic features have been completed, and while no breaking API changes are currently planned, the API can change in a backwards incompatible way before the project is declared stable.
 
 ## Overview
@@ -57,6 +63,10 @@ When used in conjunction with [encrypting Secret Data at Rest][encrypting-secret
     ```bash
     kubectl apply -f example/k8s_v1alpha1_secretencryptionconfig_cr.yaml
     ```
+
+### Getting CLI
+
+Official Secreter CLI binaries can be found on the [Releases][releases] page.
 
 ### Configuring Secreter
 
@@ -327,3 +337,4 @@ Providers:
 [curve25519]: https://godoc.org/github.com/amaizfinance/secreter/pkg/crypto/curve25519
 [libsodium-sealed-box]: https://download.libsodium.org/doc/public-key_cryptography/sealed_boxes
 [nacl-box]: https://nacl.cr.yp.to/box.html
+[releases]: https://github.com/amaizfinance/secreter/releases
