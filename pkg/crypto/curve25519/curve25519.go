@@ -128,6 +128,11 @@ func GenerateKeys(rand io.Reader) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
+	// clamping, see https://cr.yp.to/ecdh.html
+	privateKey[0] &= 248
+	privateKey[31] &= 127
+	privateKey[31] |= 64
+
 	curve25519.ScalarBaseMult(publicKey, privateKey)
 	return publicKey[:], privateKey[:], nil
 }
