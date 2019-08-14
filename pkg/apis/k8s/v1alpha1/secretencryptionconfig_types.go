@@ -74,15 +74,20 @@ type Curve25519 struct {
 // GCPKMS defines all the parameters needed for encryption via GCP KMS.
 type GCPKMS struct {
 	// GCP project ID, see https://cloud.google.com/kms/docs/object-hierarchy#project
+	// +kubebuilder:validation:Pattern=^[a-z]([a-z0-9-]+)?[a-z0-9]?$
 	ProjectID string `json:"projectID"`
 	// KMS location ID, see https://cloud.google.com/kms/docs/object-hierarchy#location
+	// +kubebuilder:validation:Pattern=^[\w-]{1,63}$
 	LocationID string `json:"locationID"`
 	// Key ring resource ID, see https://cloud.google.com/kms/docs/object-hierarchy#key_ring
+	// +kubebuilder:validation:Pattern=^[\w-]{1,63}$
 	KeyRingID string `json:"keyRingID"`
 	// Key resource ID, see https://cloud.google.com/kms/docs/object-hierarchy#key
+	// +kubebuilder:validation:Pattern=^[\w-]{1,63}$
 	CryptoKeyID string `json:"cryptoKeyID"`
 	// Key version resource ID (needed for asymmetric decryption), see https://cloud.google.com/kms/docs/object-hierarchy#key_version
-	CryptoKeyVersion string `json:"cryptoKeyVersion,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	CryptoKeyVersion int `json:"cryptoKeyVersion,omitempty"`
 	// List of references to keys of Secrets containing GCP credential files, see https://cloud.google.com/iam/docs/creating-managing-service-account-keys
 	Credentials []SecretKeySelector `json:"credentials"`
 }

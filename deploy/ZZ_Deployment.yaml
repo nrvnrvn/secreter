@@ -21,7 +21,7 @@ spec:
       serviceAccountName: secreter
       containers:
       - name: secreter
-        image: amaiz/secreter:latest
+        image: amaiz/secreter:v0.0.1
         imagePullPolicy: Always
         env:
         - name: WATCH_NAMESPACE # left empty to watch all namespaces
