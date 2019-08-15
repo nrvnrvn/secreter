@@ -30,7 +30,7 @@
 // Additional data is used as salt. Key and nonce for XChaCha20-Poly1305 are generated via HKDF.
 //
 // Additional data is concatenated with the resulting ciphertext. Public key is
-// stored alongside the original message to simplify the search of the
+// stored alongside the encrypted message to simplify the search of the
 // corresponding private key performed by the recipient.
 //
 // Ephemeral key pair is generated every time the encryption is called.
@@ -38,7 +38,7 @@
 // encryption is called.
 //
 // Generating ephemeral keys for every encrypting operation guarantees uniqueness
-// of derived keys and nonces.
+// of derived keys and nonce.
 //
 // Resulting message structure:
 //   [Header:1||EPK:32||ciphertext]
@@ -75,7 +75,7 @@ type box struct {
 	rand                  io.Reader
 }
 
-// Encrypt will encrypt the message using an ephemeral keypair
+// Encrypt will encrypt the message using an ephemeral key pair
 func (b box) Encrypt(plaintext []byte) ([]byte, error) {
 	if len(b.publicKey) != KeySize {
 		return nil, errKeySize
@@ -87,20 +87,18 @@ func (b box) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	// encrypt plaintext
 	ciphertext, err := xchacha20poly1305.Seal(
 		computeSharedKey(b.publicKey, ephemeralPrivateKey),
 		plaintext,
-		concatByteSlices(b.publicKey, ephemeralPublicKey))
+		crypto.ConcatByteSlices(b.publicKey, ephemeralPublicKey))
 	if err != nil {
 		return nil, err
 	}
 
-	output := make([]byte, ephemeralPublicKeyOffset+len(ciphertext))
-	output[0] = crypto.Curve25519Xchacha20poly1305
-	copy(output[headerOffset:ephemeralPublicKeyOffset], ephemeralPublicKey)
-	copy(output[ephemeralPublicKeyOffset:], ciphertext)
+	header := []byte{crypto.Curve25519Xchacha20poly1305}
 
-	return output, nil
+	return crypto.ConcatByteSlices(header, ephemeralPublicKey, ciphertext), nil
 }
 
 // Decrypt decrypts the ciphertext using the private Key
@@ -116,7 +114,7 @@ func (b box) Decrypt(ciphertext []byte) ([]byte, error) {
 	return xchacha20poly1305.Open(
 		computeSharedKey(ciphertext[headerOffset:ephemeralPublicKeyOffset], b.privateKey),
 		ciphertext[ephemeralPublicKeyOffset:],
-		concatByteSlices(b.publicKey, ciphertext[headerOffset:ephemeralPublicKeyOffset]),
+		crypto.ConcatByteSlices(b.publicKey, ciphertext[headerOffset:ephemeralPublicKeyOffset]),
 	)
 }
 
@@ -149,17 +147,4 @@ func computeSharedKey(peerPublicKeyBytes, privateKeyBytes []byte) []byte {
 	curve25519.ScalarMult(sharedKey, privateKey, publicKey)
 
 	return sharedKey[:]
-}
-
-func concatByteSlices(slices ...[]byte) []byte {
-	var capSlice int
-	for i := range slices {
-		capSlice += len(slices[i])
-	}
-	res := make([]byte, 0, capSlice)
-	for i := range slices {
-		res = append(res, slices[i]...)
-	}
-
-	return res
 }

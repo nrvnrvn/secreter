@@ -9,4 +9,5 @@ go_library(
     importmap = "github.com/amaizfinance/secreter/vendor/google.golang.org/grpc/stats",
     importpath = "google.golang.org/grpc/stats",
     visibility = ["//visibility:public"],
+    deps = ["//vendor/google.golang.org/grpc/metadata:go_default_library"],
 )

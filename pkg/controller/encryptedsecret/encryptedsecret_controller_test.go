@@ -17,7 +17,6 @@ package encryptedsecret
 import (
 	"bytes"
 	"context"
-	"reflect"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,7 +26,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	// _ "github.com/evanphx/json-patch"
@@ -35,7 +33,6 @@ import (
 	k8sv1alpha1 "github.com/amaizfinance/secreter/pkg/apis/k8s/v1alpha1"
 
 	"github.com/amaizfinance/secreter/pkg/apis"
-	"github.com/amaizfinance/secreter/pkg/crypto"
 	"github.com/amaizfinance/secreter/pkg/crypto/curve25519"
 )
 
@@ -101,19 +98,19 @@ func TestReconcileEncryptedSecret_Reconcile(t *testing.T) {
 	}
 
 	// Register operator types with the runtime scheme.
-	scheme := scheme.Scheme
-	if err := corev1.AddToScheme(scheme); err != nil {
+	s := scheme.Scheme
+	if err := corev1.AddToScheme(s); err != nil {
 		t.Errorf("failed to register core types: %v", err)
 		return
 	}
-	if err := apis.AddToScheme(scheme); err != nil {
+	if err := apis.AddToScheme(s); err != nil {
 		t.Errorf("failed to register amaiz types: %v", err)
 		return
 	}
 
 	t.Run("normal creation", func(t *testing.T) {
 		client := fake.NewFakeClient(objs...)
-		r := &ReconcileEncryptedSecret{client: client, scheme: scheme}
+		r := &ReconcileEncryptedSecret{client: client, scheme: s}
 
 		// Create a ReconcileEncryptedSecret object with the scheme and fake client.
 		// Mock request to simulate Reconcile() being called on an event for a
@@ -158,176 +155,6 @@ func TestReconcileEncryptedSecret_Reconcile(t *testing.T) {
 			t.Fatalf("decrypted should be false %#v", encrypted.Status)
 		}
 	})
-
-	// /////////////////////////////////////////
-	// /////////////////////////////////////////
-	// /////////////////////////////////////////
-	// /////////////////////////////////////////
-	// /////////////////////////////////////////
-	// type fields struct {
-	// 	client client.Client
-	// 	scheme *runtime.Scheme
-	// }
-	// type args struct {
-	// 	request reconcile.Request
-	// }
-	// tests := []struct {
-	// 	name    string
-	// 	fields  fields
-	// 	args    args
-	// 	want    reconcile.Result
-	// 	wantErr bool
-	// }{
-	// 	{
-	// 		name:   "not exist",
-	// 		fields: fields{client: fake.NewFakeClient(objs...), scheme: scheme},
-	// 		args: args{
-	// 			request: reconcile.Request{
-	// 				NamespacedName: types.NamespacedName{
-	// 					Name:      "dummy",
-	// 					Namespace: nameForEverythingElse,
-	// 				},
-	// 			},
-	// 		},
-	// 		want: reconcile.Result{},
-	// 	},
-	// 	{
-	// 		name:   "normal",
-	// 		fields: fields{client: fake.NewFakeClient(objs...), scheme: scheme},
-	// 		args: args{
-	// 			request: reconcile.Request{
-	// 				NamespacedName: types.NamespacedName{
-	// 					Name:      nameForEverythingElse,
-	// 					Namespace: nameForEverythingElse,
-	// 				},
-	// 			},
-	// 		},
-	// 		want: reconcile.Result{Requeue: true},
-	// 	},
-	// }
-	// for _, tt := range tests {
-	// 	t.Run(tt.name, func(t *testing.T) {
-	// 		r := &ReconcileEncryptedSecret{
-	// 			client: tt.fields.client,
-	// 			scheme: tt.fields.scheme,
-	// 		}
-	// 		got, err := r.Reconcile(tt.args.request)
-	// 		if (err != nil) != tt.wantErr {
-	// 			t.Errorf("ReconcileEncryptedSecret.Reconcile() error = %v, wantErr %v", err, tt.wantErr)
-	// 			return
-	// 		}
-	// 		if !reflect.DeepEqual(got, tt.want) {
-	// 			t.Errorf("ReconcileEncryptedSecret.Reconcile() = %v, want %v", got, tt.want)
-	// 		}
-	// 	})
-	// }
-}
-
-func TestReconcileEncryptedSecret_initDecrypters(t *testing.T) {
-	type fields struct {
-		client client.Client
-		scheme *runtime.Scheme
-	}
-	type args struct {
-		config *k8sv1alpha1.SecretEncryptionConfig
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    map[byte][]crypto.Decrypter
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &ReconcileEncryptedSecret{
-				client: tt.fields.client,
-				scheme: tt.fields.scheme,
-			}
-			got, err := r.initDecrypters(tt.args.config)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ReconcileEncryptedSecret.initDecrypters() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ReconcileEncryptedSecret.initDecrypters() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestReconcileEncryptedSecret_createOrUpdateSecret(t *testing.T) {
-	type fields struct {
-		client client.Client
-		scheme *runtime.Scheme
-	}
-	type args struct {
-		decrypted *corev1.Secret
-		encrypted *k8sv1alpha1.EncryptedSecret
-	}
-	tests := []struct {
-		name             string
-		fields           fields
-		args             args
-		wantStateChanged bool
-		wantErr          bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &ReconcileEncryptedSecret{
-				client: tt.fields.client,
-				scheme: tt.fields.scheme,
-			}
-			gotStateChanged, err := r.createOrUpdateSecret(tt.args.decrypted, tt.args.encrypted)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ReconcileEncryptedSecret.createOrUpdateSecret() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if gotStateChanged != tt.wantStateChanged {
-				t.Errorf("ReconcileEncryptedSecret.createOrUpdateSecret() = %v, want %v", gotStateChanged, tt.wantStateChanged)
-			}
-		})
-	}
-}
-
-func TestReconcileEncryptedSecret_updateStatus(t *testing.T) {
-	type fields struct {
-		client client.Client
-		scheme *runtime.Scheme
-	}
-	type args struct {
-		encrypted       *k8sv1alpha1.EncryptedSecret
-		failedToDecrypt map[string]string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    reconcile.Result
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &ReconcileEncryptedSecret{
-				client: tt.fields.client,
-				scheme: tt.fields.scheme,
-			}
-			got, err := r.updateStatus(tt.args.encrypted, tt.args.failedToDecrypt)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ReconcileEncryptedSecret.updateStatus() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ReconcileEncryptedSecret.updateStatus() = %v, want %v", got, tt.want)
-			}
-		})
-	}
 }
 
 func Test_secretUpdateNeeded(t *testing.T) {

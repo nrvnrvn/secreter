@@ -37,11 +37,12 @@ import (
 	k8sv1alpha1 "github.com/amaizfinance/secreter/pkg/apis/k8s/v1alpha1"
 	"github.com/amaizfinance/secreter/pkg/crypto"
 	"github.com/amaizfinance/secreter/pkg/crypto/curve25519"
+	"github.com/amaizfinance/secreter/pkg/crypto/gcpkms"
 )
 
 var (
-	log                = logf.Log.WithName("controller_encryptedsecret")
 	errEmptyCipherText = errors.New("ciphertext cannot be empty")
+	log                = logf.Log.WithName("controller_encryptedsecret")
 	operatorNamespace  string
 )
 
@@ -61,10 +62,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
 	c, err := controller.New(
 		"encryptedsecret-controller", mgr,
-		controller.Options{
-			MaxConcurrentReconciles: 4,
-			Reconciler:              r,
-		},
+		controller.Options{MaxConcurrentReconciles: 4, Reconciler: r},
 	)
 	if err != nil {
 		return err
@@ -110,9 +108,12 @@ func (r *ReconcileEncryptedSecret) Reconcile(request reconcile.Request) (reconci
 	logger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	logger.V(1).Info("Reconciling EncryptedSecret")
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Fetch the EncryptedSecret instance
 	encrypted := new(k8sv1alpha1.EncryptedSecret)
-	if err := r.client.Get(context.TODO(), request.NamespacedName, encrypted); err != nil {
+	if err := r.client.Get(ctx, request.NamespacedName, encrypted); err != nil {
 		if apierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
@@ -124,28 +125,21 @@ func (r *ReconcileEncryptedSecret) Reconcile(request reconcile.Request) (reconci
 
 	// read config referenced in the EncryptedSecret
 	config := new(k8sv1alpha1.SecretEncryptionConfig)
-	if err := r.client.Get(
-		context.TODO(),
-		types.NamespacedName{
-			Namespace: operatorNamespace,
-			Name:      encrypted.EncryptionConfigRef.Name,
-		},
-		config,
-	); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{
+		Namespace: operatorNamespace,
+		Name:      encrypted.EncryptionConfigRef.Name,
+	}, config); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to fetch SecretEncryptionConfig: %s", err)
 	}
 
 	// parse config and compile a suite of decrypters
-	decrypterSuite, err := r.initDecrypters(config)
+	decrypterSuite, err := r.initDecrypters(ctx, config)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to initialize decrypters: %s", err)
 	}
 
-	// initialize Secret
-	decrypted := &corev1.Secret{
-		Data: make(map[string][]byte),
-		Type: encrypted.Type,
-	}
+	// initialize Secret with name, namespace and .metadata.Labels matching those of the Encrypted Secret
+	decrypted := &corev1.Secret{Data: make(map[string][]byte), Type: encrypted.Type}
 	decrypted.SetName(encrypted.GetName())
 	decrypted.SetNamespace(encrypted.GetNamespace())
 	decrypted.SetLabels(encrypted.GetLabels())
@@ -161,7 +155,6 @@ func (r *ReconcileEncryptedSecret) Reconcile(request reconcile.Request) (reconci
 		for _, decrypter := range decrypterSuite[ciphertext[0]] {
 			plaintext, err := decrypter.Decrypt(ciphertext)
 			if err != nil {
-				logger.V(1).Info("error decrypting")
 				failedToDecrypt[key] = err.Error()
 				continue
 			}
@@ -171,39 +164,64 @@ func (r *ReconcileEncryptedSecret) Reconcile(request reconcile.Request) (reconci
 		}
 	}
 
-	stateChanged, err := r.createOrUpdateSecret(decrypted, encrypted)
+	stateChanged, err := r.createOrUpdateSecret(ctx, decrypted, encrypted)
 	if err != nil {
+		logger.V(1).Info("state did not change")
 		return reconcile.Result{}, err
 	}
 	if stateChanged {
 		logger.Info("Updated Secret")
-		return r.updateStatus(encrypted, failedToDecrypt)
 	}
 
-	return reconcile.Result{}, nil
+	return r.updateStatus(ctx, encrypted, failedToDecrypt)
 }
 
-// initDecrypters creates a map of Decrypters which can be addressed by using the corresponding ciphersuite ID and publicKey representation
-func (r *ReconcileEncryptedSecret) initDecrypters(config *k8sv1alpha1.SecretEncryptionConfig) (map[byte][]crypto.Decrypter, error) {
+// initDecrypters creates a map of Decrypters which can be addressed
+// by using the corresponding cipher suite ID and publicKey representation
+func (r *ReconcileEncryptedSecret) initDecrypters(
+	ctx context.Context, config *k8sv1alpha1.SecretEncryptionConfig,
+) (map[byte][]crypto.Decrypter, error) {
 	decrypterSuite := make(map[byte][]crypto.Decrypter)
+
 	for _, provider := range config.Providers {
 		if provider.Curve25519 != nil && provider.GCPKMS != nil {
-			return nil, errors.New("more than one provider configured in a section")
+			return nil, crypto.ErrMultipleCipherSuites
 		}
 
 		switch {
 		case provider.GCPKMS != nil:
+			for _, selector := range provider.GCPKMS.Credentials {
+				credStore := new(corev1.Secret)
+				if err := r.client.Get(ctx, types.NamespacedName{
+					Namespace: operatorNamespace,
+					Name:      selector.SecretKeyRef.Name,
+				}, credStore); err != nil {
+					return nil, err
+				}
+
+				decrypter, err := gcpkms.New(ctx, gcpkms.Options{
+					ProjectID:        provider.GCPKMS.ProjectID,
+					LocationID:       provider.GCPKMS.LocationID,
+					KeyRingID:        provider.GCPKMS.KeyRingID,
+					CryptoKeyID:      provider.GCPKMS.CryptoKeyID,
+					CryptoKeyVersion: provider.GCPKMS.CryptoKeyVersion,
+					Credentials:      credStore.Data[selector.SecretKeyRef.Key],
+				})
+				if err != nil {
+					return nil, err
+				}
+
+				decrypterSuite[crypto.GCPKMSXchacha20poly1305] = append(
+					decrypterSuite[crypto.GCPKMSXchacha20poly1305], decrypter,
+				)
+			}
 		case provider.Curve25519 != nil:
 			// fetch the keystore
 			keystore := new(corev1.Secret)
-			if err := r.client.Get(
-				context.TODO(),
-				types.NamespacedName{
-					Namespace: operatorNamespace,
-					Name:      provider.Curve25519.KeyStore.Name,
-				},
-				keystore,
-			); err != nil {
+			if err := r.client.Get(ctx, types.NamespacedName{
+				Namespace: operatorNamespace,
+				Name:      provider.Curve25519.KeyStore.Name,
+			}, keystore); err != nil {
 				return nil, err
 			}
 
@@ -218,21 +236,23 @@ func (r *ReconcileEncryptedSecret) initDecrypters(config *k8sv1alpha1.SecretEncr
 					),
 				)
 			}
+		default:
+			return nil, crypto.ErrNoCipherSuites
 		}
 	}
 
 	return decrypterSuite, nil
 }
 
-func (r *ReconcileEncryptedSecret) createOrUpdateSecret(decrypted *corev1.Secret, encrypted *k8sv1alpha1.EncryptedSecret) (stateChanged bool, err error) {
-	secret := new(corev1.Secret)
-
+func (r *ReconcileEncryptedSecret) createOrUpdateSecret(
+	ctx context.Context, decrypted *corev1.Secret, encrypted *k8sv1alpha1.EncryptedSecret,
+) (stateChanged bool, err error) {
 	// get or create the secret
-	if err = r.client.Get(
-		context.TODO(),
-		types.NamespacedName{Namespace: encrypted.GetNamespace(), Name: encrypted.GetName()},
-		secret,
-	); err != nil {
+	secret := new(corev1.Secret)
+	if err = r.client.Get(ctx, types.NamespacedName{
+		Namespace: encrypted.GetNamespace(),
+		Name:      encrypted.GetName(),
+	}, secret); err != nil {
 		// create if not found
 		if apierrors.IsNotFound(err) {
 			// Set EncryptedSecret instance as the owner and controller
@@ -240,7 +260,7 @@ func (r *ReconcileEncryptedSecret) createOrUpdateSecret(decrypted *corev1.Secret
 				return false, fmt.Errorf("failed to set owner for Secret: %s", err)
 			}
 
-			if err = r.client.Create(context.TODO(), decrypted); err != nil && !apierrors.IsAlreadyExists(err) {
+			if err = r.client.Create(ctx, decrypted); err != nil && !apierrors.IsAlreadyExists(err) {
 				return false, fmt.Errorf("failed to create Secret: %s", err)
 			}
 
@@ -254,7 +274,7 @@ func (r *ReconcileEncryptedSecret) createOrUpdateSecret(decrypted *corev1.Secret
 			return false, fmt.Errorf("failed to set owner for Secret: %s", err)
 		}
 
-		if err = r.client.Update(context.TODO(), secret); err != nil {
+		if err = r.client.Update(ctx, secret); err != nil {
 			if apierrors.IsConflict(err) {
 				// conflicts can be common, consider it part of normal operation
 				return true, nil
@@ -267,7 +287,7 @@ func (r *ReconcileEncryptedSecret) createOrUpdateSecret(decrypted *corev1.Secret
 }
 
 // updateStatus will requeue request if decrypted is false
-func (r *ReconcileEncryptedSecret) updateStatus(encrypted *k8sv1alpha1.EncryptedSecret, failedToDecrypt map[string]string) (reconcile.Result, error) {
+func (r *ReconcileEncryptedSecret) updateStatus(ctx context.Context, encrypted *k8sv1alpha1.EncryptedSecret, failedToDecrypt map[string]string) (reconcile.Result, error) {
 	decrypted := len(failedToDecrypt) == 0
 
 	if encrypted.Status != nil &&
@@ -281,7 +301,7 @@ func (r *ReconcileEncryptedSecret) updateStatus(encrypted *k8sv1alpha1.Encrypted
 		FailedToDecrypt: failedToDecrypt,
 	}
 
-	if err := r.client.Status().Update(context.TODO(), encrypted); err != nil {
+	if err := r.client.Status().Update(ctx, encrypted); err != nil {
 		if apierrors.IsConflict(err) {
 			return reconcile.Result{Requeue: true}, nil
 		}
@@ -314,6 +334,7 @@ func mapStringsEqual(got, want map[string]string) bool {
 	if len(got) != len(want) {
 		return false
 	}
+
 	for k, stringWant := range want {
 		stringGot, ok := got[k]
 		if !(ok && stringGot == stringWant) {
@@ -327,6 +348,7 @@ func mapBytesEqual(got, want map[string][]byte) bool {
 	if len(got) != len(want) {
 		return false
 	}
+
 	for k, bytesWant := range want {
 		bytesGot, ok := got[k]
 		if !(ok && bytes.Equal(bytesGot, bytesWant)) {

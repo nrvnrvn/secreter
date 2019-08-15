@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = ["gcpkms.go"],
+    importpath = "github.com/amaizfinance/secreter/pkg/crypto/gcpkms",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/crypto:go_default_library",
+        "//pkg/crypto/xchacha20poly1305:go_default_library",
+        "//vendor/cloud.google.com/go/kms/apiv1:go_default_library",
+        "//vendor/github.com/googleapis/gax-go/v2:go_default_library",
+        "//vendor/google.golang.org/api/option:go_default_library",
+        "//vendor/google.golang.org/genproto/googleapis/cloud/kms/v1:go_default_library",
+    ],
+)

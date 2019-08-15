@@ -16,6 +16,8 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"crypto/rsa"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -25,18 +27,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/util/validation"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	runtimeSerializer "k8s.io/apimachinery/pkg/runtime/serializer"
-
-	k8sv1alpha1 "github.com/amaizfinance/secreter/pkg/apis/k8s/v1alpha1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/amaizfinance/secreter/pkg/apis"
+	k8sv1alpha1 "github.com/amaizfinance/secreter/pkg/apis/k8s/v1alpha1"
 	"github.com/amaizfinance/secreter/pkg/crypto"
 	"github.com/amaizfinance/secreter/pkg/crypto/curve25519"
+	"github.com/amaizfinance/secreter/pkg/crypto/gcpkms"
 )
 
 const (
@@ -435,27 +436,44 @@ func newSerializer(
 
 // newEncryptUpdater creates an instance of EncryptUpdater using the provider.
 func newEncryptUpdater(configName string, provider k8sv1alpha1.SecretEncryptionProvider, publicKey string) (EncryptUpdater, error) {
+	var (
+		encrypter crypto.Encrypter
+		err       error
+	)
+
 	switch {
-	case provider.GCPKMS != nil && len(provider.GCPKMS.CryptoKeyVersion) > 0:
-		// RSA public key here
-		// config.Status.PublicKey = "some key"
-		// should be something like
-		// return gcpkms.New(params go here ...), nil
-	case provider.GCPKMS != nil && len(provider.GCPKMS.CryptoKeyVersion) == 0:
-		// config.Status.PublicKey=projects/PROJECT_ID/locations/global/keyRings/RING_ID/cryptoKeys/KEY_ID
+	case provider.GCPKMS != nil:
+		var decodedKey *rsa.PublicKey
+		if len(publicKey) != 0 {
+			decodedKey, err = gcpkms.ParsePublicKey(publicKey)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		encrypter, err = gcpkms.New(context.TODO(), gcpkms.Options{
+			ProjectID:        provider.GCPKMS.ProjectID,
+			LocationID:       provider.GCPKMS.LocationID,
+			KeyRingID:        provider.GCPKMS.KeyRingID,
+			CryptoKeyID:      provider.GCPKMS.CryptoKeyID,
+			CryptoKeyVersion: provider.GCPKMS.CryptoKeyVersion,
+			PublicKey:        decodedKey,
+		})
+		if err != nil {
+			return nil, err
+		}
+	case provider.Curve25519 != nil:
+		decodedKey, err := hex.DecodeString(publicKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode curve25519 public key: %v", err)
+		}
+
+		encrypter = curve25519.New(decodedKey, nil)
 	default:
+		return nil, crypto.ErrNoCipherSuites
 	}
 
-	// curve25519
-	decodedKey, err := hex.DecodeString(publicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return &encryptUpdater{
-		encryptionConfigName: configName,
-		encrypter:            curve25519.New(decodedKey, nil),
-	}, nil
+	return &encryptUpdater{encryptionConfigName: configName, encrypter: encrypter}, nil
 }
 
 // ParseDataSources reads files and literals converting them to a map suitable for encryption.
@@ -495,10 +513,12 @@ func parseFileSource(fromFile []string, into map[string][]byte) error {
 		if errs := validation.IsConfigMapKey(keyName); len(errs) != 0 {
 			return fmt.Errorf("%q is not a valid key name for a Secret: %s", keyName, strings.Join(errs, ";"))
 		}
+
 		contents, err := ioutil.ReadFile(source)
 		if err != nil {
 			return fmt.Errorf("could not read %s: %s", source, err)
 		}
+
 		into[keyName] = contents
 	}
 

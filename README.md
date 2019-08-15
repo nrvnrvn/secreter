@@ -35,7 +35,7 @@ When used in conjunction with [encrypting Secret Data at Rest][encrypting-secret
 * Separation of concerns. Every encrypted secret is explicitly bound to the secret encryption config. Thus you may group secrets based on their shared access, usage and protection needs and use different secret encryption configs for different groups of secrets. Please refer to the "[Configuring Secreter](#configuring-secreter)" section for details.
 * Separation of duties. Secreter CLI is used **only** for encrypting secrets and updating existing encrypted secrets. Operator is used **only** for decrypting secrets. Secret encryption config contains **only** public data required for encryption. Thus `SecretEncryptionConfig` objects can be left visible using RBAC for users involved in encryption of secrets.
 * Non-interactive CLI. End user can encrypt a secret or update existing encrypted secret but cannot edit an encrypted secret interactively.
-* Multiple providers. You can choose between the built-in curve25519 provider and cloud KMS options (to be announced soon), define multiple providers and switch between them.
+* Multiple providers. You can choose between the built-in curve25519 provider and GCP KMS (more cloud KMS options to be announced soon), define multiple providers and switch between them.
 * Multi namespace. By default the controller operates in the entire cluster. But it is possible to run namespaced controllers bound to specific namespaces.
 * Separation of duties. Secret encryption config contains only public data required for encryption. Thus using RBAC it can be made available for read access to those who should be able to create or update encrypted secrets.
 * Key rotation. Keys can be rotated manually or automatically. Please refer to "[Key rotation](#key-rotation)" for details.
@@ -75,9 +75,11 @@ The `SecretEncryptionConfig` CRD is used for configuring Secreter.
 #### Important considerations
 
 * Secret Encryption Config must reside in the same namespace as the operator. Configs created in other namespaces will be ignored.
-* Secret Encryption Config contains only public data needed for encryption. It is safe to be stored outside of the cluster.
-* Config's `.status.publicKey` is used for encryption. Depending on the provider used it will keep either public key or some other form of public data required for encryption. You can either store it as a file or fetch dynamically upon encrypting the Secret or updating an Encrypted Secret.
+* Secret Encryption Config contains only public data needed for encryption. It is safe to be stored outside of the cluster. You can either store it as a file or fetch dynamically upon encrypting the Secret or updating an Encrypted Secret.
+* Config's `.status.publicKey` is used for encryption. Depending on the provider used it will keep either public key or some other form of public data required for encryption.
 * Multiple secret encryption configs may be created for better segregation of secrets.
+
+#### Configuration overview
 
 Let's go through the sample `SecretEncryptionConfig`:
 
@@ -114,14 +116,65 @@ status:
 
 In the above config there are two providers configured , named `primary` and `secondary` for simplicity. The first element is a primary provider that is supposed to be used for encryption. `primary` provider's section configures the built-in `curve25519` provider. Name of the `keyStore` is the name of the Kubernetes secret containing public and primary keys. Operator will create the key store if it does not find one. The `secondary` provider contains the `gcpkms` configuration with the reference to the secret with the the service account `credentials`. `credentials` is an ordered list allowing you to seamlessly rotate the credentials when needed.
 
-##### Currently supported providers
+#### Configuring providers
 
-* `curve25519` - this is the default built-in provider. Please refer to the "[Cryptography overview](#cryptography-overview)" for details.
+##### Curve25519
 
-##### Planned providers
+```yaml
+<...>
+providers:
+- name: primary
+  curve25519:
+    keyStore:
+      name: my-curve25519-keystore
+```
 
-* `gcpkms` - support for [Google Cloud KMS][google-cloud-kms] (both symmetric and asymmetric encryption) will be added in the nearest future.
-* `awskms` - support for [AWS KMS][aws-kms] will be added in the nearest future.
+Operator will create a Kubernetes Secret `my-curve25519-keystore` with the keystore if it does not exist. No configuration other than that is needed.
+
+##### GCP KMS
+
+To add a GCP KMS provider you will need to pass `projectID`, `locationID`, `keyRingID` and `cryptoKeyID`. Those are required for symmetric encryption. In order to use asymmetric encryption be sure to pass `cryptoKeyVersion` as well. Please refer to the [GCP KMS Object hierarchy] for details.
+
+`credentials` hold the [GCP service account credentials]. Once you've created and obtained the credentials json create a Kubernetes Secret in the operator namespace:
+
+```bash
+$ kubectl -n secreter create secret generic my-kms-project-creds --from-file creds.json
+secret/my-kms-project-creds created
+```
+
+Once created you can refer to this secret within the secret encryption config.
+`credentials` is a list so that you can refer to multiple service account credentials.
+
+```yaml
+<...>
+providers:
+- name: my-gcp
+  gcpkms:
+    projectID: my-kms-project
+    locationID: global
+    keyRingID: my-keyring
+    cryptoKeyID: my-key
+    cryptoKeyVersion: 1 # optional field, use with asymmetric encryption only.
+    credentials:
+    - secretKeyRef:
+        name: my-kms-project-creds
+        key: creds.json
+<...>
+```
+
+To be able to encrypt secrets using GCP KMS you will need to:
+
+1. install the [Google Cloud SDK].
+
+2. acquire new [Application Default Credentials]:
+
+    ```bash
+    gcloud auth application-default login
+    ```
+
+#### Planned providers
+
+* `awskms` - support for [AWS KMS] will be added in the nearest future.
 
 #### Key rotation
 
@@ -317,24 +370,30 @@ One of the major goals was to avoid _legacy_ crypto algorithms as well as _new s
 
 All secret data is encrypted using hybrid (or envelope) encryption.
 
-[AEAD][aead] is used for encrypting the data itself. Currently only [XChaCha20-Poly1305][xchacha20-poly1305] is used for AEAD. It is designed to avoid key and nonce reuse. key and nonce are derived for input key material using HKDF. Please refer to the package documentation for detailed description.
+[AEAD] is used for encrypting the data itself. Currently only [XChaCha20-Poly1305][xchacha20-poly1305] is used for AEAD. It is designed to avoid key and nonce reuse. Key and nonce are derived for input key material using HKDF. Please refer to the package documentation for detailed description.
 
 All providers are supposed to use XChaCha20-Poly1305 for encrypting raw secret data.
 
 Providers:
 
-* [Curve25519][curve25519] is the built-in provider. Curve25519 together with XChaCha20-Poly1305 is designed to generate unique cryptographically strong key and nonce for encrypting secret values. Every value is encrypted with its own unique key. This provider is inspired by Libsodium's [sealed box][libsodium-sealed-box] and NaCl [box][nacl-box]. Please refer to the package documentation for detailed description.
-* GCP KMS symmetric (planned: 256-bit DEK is randomly generated per value and encrypted using KMS. Ciphertext is concatenated with the enciphered DEK).
-* GCP KMS asymmetric (planned: 256-bit DEK is randomly generated per value and encrypted using RSA OAEP, public RSA key is stored in `.status.PublicKey` of the secret encryption config avoiding the need to connect to GCP KMS API for encryption. Ciphertext is concatenated with the enciphered DEK. Decryption is performed the same way as with GCP KMS symmetric, i.e. firing a request to the API).
-* AWS KMS (planned: PRs are welcome).
+* [Curve25519] is the built-in provider. Curve25519 together with XChaCha20-Poly1305 is designed to generate unique cryptographically strong key and nonce for encrypting secret values. Every value is encrypted with its own unique key. This provider is inspired by Libsodium's [sealed box][libsodium-sealed-box] and NaCl [box][nacl-box]. Please refer to the package documentation for detailed description.
+* [GCP KMS symmetric encryption]. 256-bit DEK is randomly generated per value and encrypted using KMS. Ciphertext is concatenated with the enciphered DEK.
+* [GCP KMS asymmetric encryption]. 256-bit DEK is randomly generated per value and encrypted using RSA OAEP, public RSA key is stored in `.status.PublicKey` of the secret encryption config. Ciphertext is concatenated with the enciphered DEK.
+* [AWS KMS] (planned: PRs are welcome).
 
+[AEAD]: https://en.wikipedia.org/wiki/Authenticated_encryption#Authenticated_encryption_with_associated_data_(AEAD)
+[AWS KMS]: https://aws.amazon.com/kms/
+[Application Default Credentials]: https://cloud.google.com/docs/authentication/production
+[Curve25519]: https://godoc.org/github.com/amaizfinance/secreter/pkg/crypto/curve25519
+[GCP KMS Object hierarchy]: https://cloud.google.com/kms/docs/object-hierarchy
+[GCP KMS asymmetric encryption]: https://cloud.google.com/kms/docs/asymmetric-encryption
+[GCP KMS symmetric encryption]: https://cloud.google.com/kms/docs/encrypt-decrypt
+[GCP service account credentials]: https://cloud.google.com/docs/authentication/production#obtaining_and_providing_service_account_credentials_manually
+[Google Cloud SDK]: https://cloud.google.com/sdk/install
 [encrypting-secret-data-at-rest]: https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data
-[google-cloud-kms]: https://cloud.google.com/kms/
-[aws-kms]: https://aws.amazon.com/kms/
 [google-cloud-kms-key-rotation]: https://cloud.google.com/kms/docs/key-rotation#automatic_rotation
-[aead]: https://en.wikipedia.org/wiki/Authenticated_encryption#Authenticated_encryption_with_associated_data_(AEAD)
-[xchacha20-poly1305]: https://godoc.org/github.com/amaizfinance/secreter/pkg/crypto/xchacha20poly1305
-[curve25519]: https://godoc.org/github.com/amaizfinance/secreter/pkg/crypto/curve25519
+[google-cloud-kms]: https://cloud.google.com/kms/
 [libsodium-sealed-box]: https://download.libsodium.org/doc/public-key_cryptography/sealed_boxes
 [nacl-box]: https://nacl.cr.yp.to/box.html
 [releases]: https://github.com/amaizfinance/secreter/releases
+[xchacha20-poly1305]: https://godoc.org/github.com/amaizfinance/secreter/pkg/crypto/xchacha20poly1305

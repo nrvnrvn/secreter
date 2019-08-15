@@ -43,6 +43,9 @@ metadata:
   name: test
 providers:
 - name: test
+  curve25519:
+    keystore:
+      name: test
 status:
   publicKey: "0000000000000000000000000000000000000000000000000000000000000000"
 `

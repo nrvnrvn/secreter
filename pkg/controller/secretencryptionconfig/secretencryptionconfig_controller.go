@@ -39,6 +39,7 @@ import (
 
 	k8sv1alpha1 "github.com/amaizfinance/secreter/pkg/apis/k8s/v1alpha1"
 	"github.com/amaizfinance/secreter/pkg/crypto/curve25519"
+	"github.com/amaizfinance/secreter/pkg/crypto/gcpkms"
 )
 
 var (
@@ -62,7 +63,10 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("secretencryptionconfig-controller", mgr, controller.Options{Reconciler: r})
+	c, err := controller.New(
+		"secretencryptionconfig-controller", mgr,
+		controller.Options{Reconciler: r},
+	)
 	if err != nil {
 		return err
 	}
@@ -113,9 +117,12 @@ func (r *ReconcileSecretEncryptionConfig) Reconcile(request reconcile.Request) (
 		return reconcile.Result{}, nil
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Fetch the SecretEncryptionConfig instance
 	config := new(k8sv1alpha1.SecretEncryptionConfig)
-	if err := r.client.Get(context.TODO(), types.NamespacedName{Namespace: operatorNamespace, Name: request.Name}, config); err != nil {
+	if err := r.client.Get(ctx, request.NamespacedName, config); err != nil {
 		if apierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
@@ -136,79 +143,105 @@ func (r *ReconcileSecretEncryptionConfig) Reconcile(request reconcile.Request) (
 	}
 
 	logger.V(1).Info("check GCP is set up")
-
 	primaryProvider := config.Providers[0]
-	if primaryProvider.GCPKMS != nil {
-		// TODO: retrieve public asymmetric keys and write to .status.providers[i].gcpkms.publicKey
-		return reconcile.Result{}, nil
-	}
 
-	// deal with Curve25519
-	secret := new(corev1.Secret)
-	secretName := primaryProvider.Curve25519.KeyStore.Name
-
-	logger.V(1).Info("fetch secret")
-	if err := r.client.Get(context.TODO(), types.NamespacedName{Namespace: operatorNamespace, Name: secretName}, secret); err != nil {
-		if apierrors.IsNotFound(err) {
-			publicKey, privateKey, err := curve25519.GenerateKeys(rand.Reader)
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to generate curve25519 keypair: %s", err)
-			}
-
-			// store the newly created private and public key-pair
-			secret.Data = map[string][]byte{
-				k8sv1alpha1.Curve25519keyStorePublicKeysMapKey:  publicKey,
-				k8sv1alpha1.Curve25519keyStorePrivateKeysMapKey: privateKey,
-			}
-
-			secret.SetName(secretName)
-			secret.SetNamespace(operatorNamespace)
-			secret.SetLabels(config.GetLabels())
-			secret.SetAnnotations(
-				map[string]string{
-					k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey: hashMapStringBytes(secret.Data),
-				},
-			)
-
-			if err = controllerutil.SetControllerReference(config, secret, r.scheme); err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to set owner for Secret: %s", err)
-			}
-
-			if err = r.client.Create(context.TODO(), secret); err != nil && !apierrors.IsAlreadyExists(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to create Secret: %s", err)
-			}
-			logger.V(1).Info("created new secret")
-			return reconcile.Result{Requeue: true}, nil
-		}
-		return reconcile.Result{}, fmt.Errorf("failed to fetch Secret: %s", err)
-	}
-
-	// check the integrity of the keystore
-	if len(secret.Data[k8sv1alpha1.Curve25519keyStorePublicKeysMapKey])%curve25519.KeySize != 0 ||
-		len(secret.Data[k8sv1alpha1.Curve25519keyStorePrivateKeysMapKey])%curve25519.KeySize != 0 ||
-		hashMapStringBytes(secret.Data) != secret.Annotations[k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey] {
-		logger.Error(
-			errCurve25519KeyStoreCheckSum, hashMapStringBytes(secret.Data),
-			k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey,
-			secret.Annotations[k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey],
-		)
-		return reconcile.Result{}, nil
-	}
-
-	// TODO: create a CronJob for rotating keys
-
-	// write current public key to the configuration status
 	switch {
-	case primaryProvider.GCPKMS != nil && len(primaryProvider.GCPKMS.CryptoKeyVersion) > 0:
-		// RSA public key here
-		// config.Status.PublicKey = "--- x509 formatted cert ---"
-	case primaryProvider.GCPKMS != nil && len(primaryProvider.GCPKMS.CryptoKeyVersion) == 0:
-		// config.Status.PublicKey="projects/PROJECT_ID/locations/global/keyRings/RING_ID/cryptoKeys/KEY_ID"
+	case primaryProvider.GCPKMS != nil && primaryProvider.GCPKMS.CryptoKeyVersion > 0:
+		// fetch the first available public key
+		for _, selector := range primaryProvider.GCPKMS.Credentials {
+			credStore := new(corev1.Secret)
+			if err := r.client.Get(ctx, types.NamespacedName{
+				Namespace: operatorNamespace,
+				Name:      selector.SecretKeyRef.Name,
+			}, credStore); err != nil {
+				logger.V(1).Info(
+					"failed to fetch credentials for gcp provider",
+					"provider", primaryProvider.Name,
+					"secret", selector.SecretKeyRef.Name,
+					"key", selector.SecretKeyRef.Key,
+				)
+				continue
+			}
+			_, publicKey, err := gcpkms.GetPublicKey(ctx, gcpkms.Options{
+				ProjectID:        primaryProvider.GCPKMS.ProjectID,
+				LocationID:       primaryProvider.GCPKMS.LocationID,
+				KeyRingID:        primaryProvider.GCPKMS.KeyRingID,
+				CryptoKeyID:      primaryProvider.GCPKMS.CryptoKeyID,
+				CryptoKeyVersion: primaryProvider.GCPKMS.CryptoKeyVersion,
+				Credentials:      credStore.Data[selector.SecretKeyRef.Key],
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to fetch public key: %v", err)
+			}
+
+			config.Status.PublicKey = publicKey
+			break
+		}
+	case primaryProvider.GCPKMS != nil && primaryProvider.GCPKMS.CryptoKeyVersion == 0:
+		// no public key here
+		config.Status.PublicKey = ""
 	case primaryProvider.Curve25519 != nil:
+		// deal with Curve25519
+		secret := new(corev1.Secret)
+		secretName := primaryProvider.Curve25519.KeyStore.Name
+
+		logger.V(1).Info("fetch secret")
+		if err := r.client.Get(ctx, types.NamespacedName{
+			Namespace: operatorNamespace,
+			Name:      secretName,
+		}, secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				publicKey, privateKey, err := curve25519.GenerateKeys(rand.Reader)
+				if err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to generate curve25519 keypair: %s", err)
+				}
+
+				// store the newly created private and public key-pair
+				secret.Data = map[string][]byte{
+					k8sv1alpha1.Curve25519keyStorePublicKeysMapKey:  publicKey,
+					k8sv1alpha1.Curve25519keyStorePrivateKeysMapKey: privateKey,
+				}
+
+				secret.SetName(secretName)
+				secret.SetNamespace(operatorNamespace)
+				secret.SetLabels(config.GetLabels())
+				secret.SetAnnotations(map[string]string{
+					k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey: hashMapStringBytes(secret.Data),
+				})
+
+				if err = controllerutil.SetControllerReference(config, secret, r.scheme); err != nil {
+					return reconcile.Result{}, fmt.Errorf("failed to set owner for Secret: %s", err)
+				}
+
+				if err = r.client.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
+					return reconcile.Result{}, fmt.Errorf("failed to create Secret: %s", err)
+				}
+				logger.V(1).Info("created new secret")
+
+				return reconcile.Result{Requeue: true}, nil
+			}
+
+			return reconcile.Result{}, fmt.Errorf("failed to fetch Secret: %s", err)
+		}
+
+		// check the integrity of the keystore
+		if len(secret.Data[k8sv1alpha1.Curve25519keyStorePublicKeysMapKey])%curve25519.KeySize != 0 ||
+			len(secret.Data[k8sv1alpha1.Curve25519keyStorePrivateKeysMapKey])%curve25519.KeySize != 0 ||
+			hashMapStringBytes(secret.Data) != secret.Annotations[k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey] {
+			logger.Error(
+				errCurve25519KeyStoreCheckSum, hashMapStringBytes(secret.Data),
+				k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey,
+				secret.Annotations[k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey],
+			)
+			return reconcile.Result{}, nil
+		}
+
+		// TODO: create a CronJob for rotating keys
+
 		config.Status.PublicKey = hex.EncodeToString(secret.Data[k8sv1alpha1.Curve25519keyStorePublicKeysMapKey][:curve25519.KeySize])
 	}
 
-	if err := r.client.Status().Update(context.TODO(), config); err != nil {
+	if err := r.client.Status().Update(ctx, config); err != nil {
 		if apierrors.IsConflict(err) {
 			logger.Info("Conflict updating Status, requeue")
 			return reconcile.Result{Requeue: true}, nil

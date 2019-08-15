@@ -14,17 +14,24 @@
 
 package crypto
 
+import (
+	"errors"
+)
+
 // Cipher suites used for encryption.
 // Will always be the first byte of the encrypted message.
 const (
 	Curve25519Xchacha20poly1305 byte = iota
-	GCPKMSSymmetricXchacha20poly1305
-	GCPKMSAsymmetricXchacha20poly1305
+	GCPKMSXchacha20poly1305
 
 	HeaderSize = 1
 )
 
-// var ErrInvalidCipherSuite = errors.New("crypto: invalid cipher suite")
+var (
+	ErrInvalidCipherSuite   = errors.New("crypto: invalid cipher suite")
+	ErrNoCipherSuites       = errors.New("crypto: no cipher suites found")
+	ErrMultipleCipherSuites = errors.New("crypto: more than one provider per section")
+)
 
 // Encrypter is the interface that wraps the basic Encrypt method.
 //
@@ -44,4 +51,19 @@ type Decrypter interface {
 type EncryptDecrypter interface {
 	Encrypter
 	Decrypter
+}
+
+// ConcatByteSlices concatenates multiple byte slices and returns the resulting slice
+func ConcatByteSlices(slices ...[]byte) []byte {
+	var capSlice int
+	for i := range slices {
+		capSlice += len(slices[i])
+	}
+
+	res := make([]byte, 0, capSlice)
+	for i := range slices {
+		res = append(res, slices[i]...)
+	}
+
+	return res
 }

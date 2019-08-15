@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//pkg/apis/k8s/v1alpha1:go_default_library",
         "//pkg/crypto/curve25519:go_default_library",
+        "//pkg/crypto/gcpkms:go_default_library",
         "//vendor/github.com/operator-framework/operator-sdk/pkg/k8sutil:go_default_library",
         "//vendor/golang.org/x/crypto/blake2b:go_default_library",
         "//vendor/k8s.io/api/core/v1:go_default_library",
