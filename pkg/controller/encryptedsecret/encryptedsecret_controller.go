@@ -40,6 +40,7 @@ import (
 	"github.com/amaizfinance/secreter/pkg/crypto/gcpkms"
 )
 
+const encryptionConfigRefLabel = "encryptionConfigRef"
 var (
 	errEmptyCipherText = errors.New("ciphertext cannot be empty")
 	log                = logf.Log.WithName("controller_encryptedsecret")
@@ -131,6 +132,12 @@ func (r *ReconcileEncryptedSecret) Reconcile(request reconcile.Request) (reconci
 	}, config); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to fetch SecretEncryptionConfig: %s", err)
 	}
+
+	// set proper label referencing a SecretEncryptionConfig.
+	if encrypted.GetLabels() == nil {
+		encrypted.SetLabels(make(map[string]string))
+	}
+	encrypted.Labels[encryptionConfigRefLabel] = config.GetName()
 
 	// parse config and compile a suite of decrypters
 	decrypterSuite, err := r.initDecrypters(ctx, config)

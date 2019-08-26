@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// package gcpkms encrypts the message using Google Cloud KMS.
+// Package gcpkms encrypts the message using Google Cloud KMS.
 //
 // Only the recipient can decrypt the message using the corresponding private key.
 // While the recipient can verify the integrity of the message, it cannot verify
@@ -243,7 +243,7 @@ func GetPublicKey(ctx context.Context, options Options) (*rsa.PublicKey, string,
 	return key, response.Pem, nil
 }
 
-// ParsePublicKey parses PEM formatted string and
+// ParsePublicKey parses PEM formatted RSA public key
 func ParsePublicKey(encoded string) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode([]byte(encoded))
 	abstractKey, err := x509.ParsePKIXPublicKey(block.Bytes)

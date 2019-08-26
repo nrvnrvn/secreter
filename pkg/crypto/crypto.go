@@ -27,8 +27,8 @@ const (
 	HeaderSize = 1
 )
 
+// Error definitions
 var (
-	ErrInvalidCipherSuite   = errors.New("crypto: invalid cipher suite")
 	ErrNoCipherSuites       = errors.New("crypto: no cipher suites found")
 	ErrMultipleCipherSuites = errors.New("crypto: more than one provider per section")
 )

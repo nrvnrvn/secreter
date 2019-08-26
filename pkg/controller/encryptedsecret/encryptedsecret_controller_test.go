@@ -86,6 +86,9 @@ func TestReconcileEncryptedSecret_Reconcile(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      nameForEverythingElse,
 				Namespace: operatorNamespace,
+				Labels: map[string]string{
+					k8sv1alpha1.EncryptionConfigRefLabel: nameForEverythingElse,
+				},
 				Annotations: map[string]string{
 					"keyStoreCheckSum": testKeyStoreCheckSum,
 				},
