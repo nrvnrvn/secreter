@@ -41,6 +41,7 @@ import (
 )
 
 const encryptionConfigRefLabel = "encryptionConfigRef"
+
 var (
 	errEmptyCipherText = errors.New("ciphertext cannot be empty")
 	log                = logf.Log.WithName("controller_encryptedsecret")

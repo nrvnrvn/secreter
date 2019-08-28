@@ -37,14 +37,29 @@ import (
 )
 
 func TestReconcileEncryptedSecret_Reconcile(t *testing.T) {
-	operatorNamespace = "test-secreter"
-
-	nameForEverythingElse := "test"
+	// = "test-secreter"
+	names := struct {
+		operatorNamespace      string
+		namespace              string
+		secretEncryptionConfig string
+		encryptedSecret        string
+		secret                 string
+		keyStore               string
+	}{
+		"test-secreter",
+		"test-namespace",
+		"test-config",
+		"test-secret",
+		"test-secret",
+		"test-keystore",
+	}
+	// nameForEverythingElse := "test"
 	testPublicKey := []byte{47, 229, 125, 163, 71, 205, 98, 67, 21, 40, 218, 172, 95, 187, 41, 7, 48, 255, 246, 132, 175, 196, 207, 194, 237, 144, 153, 95, 88, 203, 59, 116}
 	testPrivateKey := make([]byte, 32)
 	testKeyStoreCheckSum := "322bad6450e2f12f5c398d1e19e44a23846c6e4a1d5f76ead5b36d4fe6457f9a35c13c4a8fd240bc005c79c590cbc092efcb939de08deb7caab0464fd4d5bede"
+	testPlaintextName, testPlaintext := "test-message", []byte("test-plaintext")
 	c := curve25519.New(testPublicKey, testPrivateKey)
-	testCipherText, err := c.Encrypt([]byte(nameForEverythingElse))
+	testCipherText, err := c.Encrypt(testPlaintext)
 	if err != nil {
 		t.Errorf("curve25519.Encrypt error = %v", err)
 		return
@@ -54,43 +69,43 @@ func TestReconcileEncryptedSecret_Reconcile(t *testing.T) {
 	objs := []runtime.Object{
 		&k8sv1alpha1.EncryptedSecret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      nameForEverythingElse,
-				Namespace: nameForEverythingElse,
+				Name:      names.encryptedSecret,
+				Namespace: names.namespace,
 			},
 			Data: map[string][]byte{
-				"errDecrypt":          {0, 1, 2},
-				"errLength":           {},
-				nameForEverythingElse: testCipherText,
+				"errDecrypt":      {0, 1, 2},
+				"errLength":       {},
+				testPlaintextName: testCipherText,
 			},
 			EncryptionConfigRef: k8sv1alpha1.EncryptionConfigRef{
-				Name: nameForEverythingElse,
+				Name: names.secretEncryptionConfig,
 			},
 		},
+
 		&k8sv1alpha1.SecretEncryptionConfig{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      nameForEverythingElse,
-				Namespace: operatorNamespace,
+				Name:      names.secretEncryptionConfig,
+				Namespace: names.operatorNamespace,
 			},
 			Providers: []k8sv1alpha1.SecretEncryptionProvider{
 				{
-					Name: nameForEverythingElse,
+					Name: names.keyStore,
 					Curve25519: &k8sv1alpha1.Curve25519{
 						KeyStore: corev1.LocalObjectReference{
-							Name: nameForEverythingElse,
+							Name: names.keyStore,
 						},
 					},
 				},
 			},
 		},
+
+		// keystore
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      nameForEverythingElse,
+				Name:      names.keyStore,
 				Namespace: operatorNamespace,
-				Labels: map[string]string{
-					k8sv1alpha1.EncryptionConfigRefLabel: nameForEverythingElse,
-				},
 				Annotations: map[string]string{
-					"keyStoreCheckSum": testKeyStoreCheckSum,
+					k8sv1alpha1.Curve25519keyStoreCheckSumAnnotationKey: testKeyStoreCheckSum,
 				},
 			},
 			Data: map[string][]byte{
@@ -120,8 +135,8 @@ func TestReconcileEncryptedSecret_Reconcile(t *testing.T) {
 		// watched resource .
 		req := reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name:      nameForEverythingElse,
-				Namespace: nameForEverythingElse,
+				Name:      names.encryptedSecret,
+				Namespace: names.namespace,
 			},
 		}
 
@@ -140,12 +155,12 @@ func TestReconcileEncryptedSecret_Reconcile(t *testing.T) {
 		if len(secret.Data) != 1 {
 			t.Fatalf("unexpected number of decrypted data = %v", secret.Data)
 		}
-		plaintext, ok := secret.Data[nameForEverythingElse]
+		plaintext, ok := secret.Data[testPlaintextName]
 		if !ok {
 			t.Fatalf("get secret data key: (%v)", ok)
 		}
-		if !bytes.Equal(plaintext, []byte(nameForEverythingElse)) {
-			t.Fatalf("secret data want = %v, got = %v", nameForEverythingElse, string(plaintext))
+		if !bytes.Equal(plaintext, testPlaintext) {
+			t.Fatalf("secret data want = %v, got = %v", string(testPlaintext), string(plaintext))
 		}
 
 		encrypted := new(k8sv1alpha1.EncryptedSecret)
