@@ -21,7 +21,7 @@ spec:
       serviceAccountName: secreter
       containers:
       - name: secreter
-        image: amaiz/secreter:v0.0.2
+        image: amaiz/secreter:v0.0.3
         imagePullPolicy: Always
         args:
         - --zap-time-encoding
