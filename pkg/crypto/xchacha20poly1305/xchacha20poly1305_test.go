@@ -100,7 +100,6 @@ func TestSealOpenDeterministic(t *testing.T) {
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fmt.Println(tt.name)
 			ciphertext, err := Seal(tt.args.key, tt.args.plaintext, tt.args.additionalData)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Seal() error = %v, wantErr %v", err, tt.wantErr)
@@ -115,7 +114,6 @@ func TestSealOpenDeterministic(t *testing.T) {
 				t.Errorf("Open() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			fmt.Println(tt.args.plaintext)
 
 			if !bytes.Equal(got, tt.want) {
 				t.Errorf("Open() = %v, wantKey %#v", got, tt.want)

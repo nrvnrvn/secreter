@@ -91,24 +91,24 @@ func Test_box_Encrypt(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := box{
+			b := encryptDecrypter{
 				publicKey:  tt.fields.publicKey,
 				privateKey: tt.fields.privateKey,
 				rand:       tt.fields.rand,
 			}
 			got, err := b.Encrypt(tt.args.plaintext)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("box.Encrypt() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("encryptDecrypter.Encrypt() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if l := len(got); l < cipherTextMinSize {
 				if !tt.wantErr {
-					t.Errorf("box.Encrypt() bad length= %d, want at least %d", l, cipherTextMinSize)
+					t.Errorf("encryptDecrypter.Encrypt() bad length= %d, want at least %d", l, cipherTextMinSize)
 				}
 				return
 			}
 			if (got[0] != crypto.Curve25519Xchacha20poly1305) != tt.wantErr {
-				t.Errorf("box.Encrypt() unexpected ciphersuite = %d, want %d", got[0], crypto.Curve25519Xchacha20poly1305)
+				t.Errorf("encryptDecrypter.Encrypt() unexpected ciphersuite = %d, want %d", got[0], crypto.Curve25519Xchacha20poly1305)
 			}
 		})
 	}
@@ -168,11 +168,11 @@ func Test_box_Decrypt(t *testing.T) {
 			c := New(tt.args.publicKey, tt.args.privateKey)
 			got, err := c.Decrypt(tt.args.ciphertext)
 			if (err != nil) && err.Error() != tt.wantErr.Error() {
-				t.Errorf("box.Decrypt()\nerror = %v,\nwantErr %v,\nciphertext %v", err, tt.wantErr, tt.args.ciphertext)
+				t.Errorf("encryptDecrypter.Decrypt()\nerror = %v,\nwantErr %v,\nciphertext %v", err, tt.wantErr, tt.args.ciphertext)
 				return
 			}
 			if !bytes.Equal(got, tt.want) {
-				t.Errorf("box.Decrypt() = %v, want %v", got, tt.want)
+				t.Errorf("encryptDecrypter.Decrypt() = %v, want %v", got, tt.want)
 			}
 		})
 	}

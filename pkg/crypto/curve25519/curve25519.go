@@ -70,28 +70,28 @@ var (
 	errCipherTextSize = errors.New("curve25519: ciphertext too short")
 )
 
-type box struct {
+type encryptDecrypter struct {
 	publicKey, privateKey []byte
 	rand                  io.Reader
 }
 
 // Encrypt will encrypt the message using an ephemeral key pair
-func (b box) Encrypt(plaintext []byte) ([]byte, error) {
-	if len(b.publicKey) != KeySize {
+func (e encryptDecrypter) Encrypt(plaintext []byte) ([]byte, error) {
+	if len(e.publicKey) != KeySize {
 		return nil, errKeySize
 	}
 
 	// Create an ephemeral key pair
-	ephemeralPublicKey, ephemeralPrivateKey, err := GenerateKeys(b.rand)
+	ephemeralPublicKey, ephemeralPrivateKey, err := GenerateKeys(e.rand)
 	if err != nil {
 		return nil, err
 	}
 
 	// encrypt plaintext
 	ciphertext, err := xchacha20poly1305.Seal(
-		computeSharedKey(b.publicKey, ephemeralPrivateKey),
+		computeSharedKey(e.publicKey, ephemeralPrivateKey),
 		plaintext,
-		crypto.ConcatByteSlices(b.publicKey, ephemeralPublicKey))
+		crypto.ConcatByteSlices(e.publicKey, ephemeralPublicKey))
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +102,8 @@ func (b box) Encrypt(plaintext []byte) ([]byte, error) {
 }
 
 // Decrypt decrypts the ciphertext using the private Key
-func (b box) Decrypt(ciphertext []byte) ([]byte, error) {
-	if len(b.privateKey) != KeySize {
+func (e encryptDecrypter) Decrypt(ciphertext []byte) ([]byte, error) {
+	if len(e.privateKey) != KeySize {
 		return nil, errKeySize
 	}
 
@@ -112,9 +112,9 @@ func (b box) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	return xchacha20poly1305.Open(
-		computeSharedKey(ciphertext[headerOffset:ephemeralPublicKeyOffset], b.privateKey),
+		computeSharedKey(ciphertext[headerOffset:ephemeralPublicKeyOffset], e.privateKey),
 		ciphertext[ephemeralPublicKeyOffset:],
-		crypto.ConcatByteSlices(b.publicKey, ciphertext[headerOffset:ephemeralPublicKeyOffset]),
+		crypto.ConcatByteSlices(e.publicKey, ciphertext[headerOffset:ephemeralPublicKeyOffset]),
 	)
 }
 
@@ -130,9 +130,9 @@ func GenerateKeys(rand io.Reader) ([]byte, []byte, error) {
 	return publicKey[:], privateKey[:], nil
 }
 
-// New returns a new instance of the box
+// New returns a new instance of the encryptDecrypter
 func New(publicKey, privateKey []byte) crypto.EncryptDecrypter {
-	return box{publicKey: publicKey, privateKey: privateKey, rand: rand.Reader}
+	return encryptDecrypter{publicKey: publicKey, privateKey: privateKey, rand: rand.Reader}
 }
 
 // computeSharedKey computes the shared key between peer's publicKey and privateKey.
