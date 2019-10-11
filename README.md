@@ -76,6 +76,7 @@ The `SecretEncryptionConfig` CRD is used for configuring Secreter.
 
 * Secret Encryption Config must reside in the same namespace as the operator. Configs created in other namespaces will be ignored.
 * Secret Encryption Config contains only public data needed for encryption. It is safe to be stored outside of the cluster. You can either store it as a file or fetch dynamically upon encrypting the Secret or updating an Encrypted Secret.
+* Secret Encryption Config does not contain secret information required for decryption. It only contains necessary references to Kubernetes Secrets containing such information (like keystores, private keys and KMS credentials). It is recommended to set up appropriate RBAC roles and bindings to limit access to sensitive information and permit read-only access to Secret Encryption Configs to those groups of people and service accounts that will be involved in encryption.
 * Config's `.status.publicKey` is used for encryption. Depending on the provider used it will keep either public key or some other form of public data required for encryption.
 * Multiple secret encryption configs may be created for better segregation of secrets.
 
@@ -172,9 +173,45 @@ To be able to encrypt secrets using GCP KMS you will need to:
     gcloud auth application-default login
     ```
 
-#### Planned providers
+##### AWS KMS
 
-* `awskms` - support for [AWS KMS] will be added in the nearest future.
+In order to add [AWS KMS] provider you will need to pass `keyID`. You can use either ARN or the [AWS KMS key alias].
+
+`credentials` hold the list of [AWS security credentials]. Once you've created and obtained the access key ID (something like AKIAIOSFODNN7EXAMPLE) and a secret access key (something like wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY) create a Kubernetes Secret in the operator namespace:
+
+```bash
+$ kubectl -n secreter create secret generic my-aws-creds --from-literal aws_access_key_id=AKIAIOSFODNN7EXAMPLE --from-literal aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+secret/my-kms-project-creds created
+```
+
+Once created you can refer to this secret within the secret encryption config.
+`credentials` is a list so that you can refer to multiple service account credentials.
+
+```yaml
+<...>
+providers:
+- name: example-awskms
+  awskms:
+    keyID: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+    credentials:
+    - accessKeyID:
+        secretKeyRef:
+          key: aws_access_key_id
+          name: my-aws-creds
+      secretAccessKey:
+        secretKeyRef:
+          key: aws_secret_access_key
+          name: my-aws-creds
+<...>
+```
+
+To be able to encrypt secrets using AWS KMS you will need to obtain AWS credentials for your account and put them into `~/.aws/credentials`, e.g.:
+
+```ini
+[default]
+aws_access_key_id = AKIAIOSFODNN7EXAMPLE
+aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+```
 
 #### Key rotation
 
@@ -379,10 +416,12 @@ Providers:
 * [Curve25519] is the built-in provider. Curve25519 together with XChaCha20-Poly1305 is designed to generate unique cryptographically strong key and nonce for encrypting secret values. Every value is encrypted with its own unique key. This provider is inspired by Libsodium's [sealed box][libsodium-sealed-box] and NaCl [box][nacl-box]. Please refer to the package documentation for detailed description.
 * [GCP KMS symmetric encryption]. 256-bit DEK is randomly generated per value and encrypted using KMS. Ciphertext is concatenated with the enciphered DEK.
 * [GCP KMS asymmetric encryption]. 256-bit DEK is randomly generated per value and encrypted using RSA OAEP, public RSA key is stored in `.status.PublicKey` of the secret encryption config. Ciphertext is concatenated with the enciphered DEK.
-* [AWS KMS] (planned: PRs are welcome).
+* [AWS KMS]. 256-bit DEK is randomly generated per value and encrypted using KMS. Ciphertext is concatenated with the enciphered DEK.
 
 [AEAD]: https://en.wikipedia.org/wiki/Authenticated_encryption#Authenticated_encryption_with_associated_data_(AEAD)
 [AWS KMS]: https://aws.amazon.com/kms/
+[AWS KMS key alias]: https://docs.aws.amazon.com/kms/latest/developerguide/programming-aliases.html
+[AWS security credentials]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html
 [Application Default Credentials]: https://cloud.google.com/docs/authentication/production
 [Curve25519]: https://godoc.org/github.com/amaizfinance/secreter/pkg/crypto/curve25519
 [GCP KMS Object hierarchy]: https://cloud.google.com/kms/docs/object-hierarchy
