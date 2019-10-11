@@ -20,7 +20,6 @@ import (
 	"io"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/googleapis/gax-go/v2"
 	kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
@@ -69,7 +68,6 @@ func Test_encryptDecrypter_Encrypt(t *testing.T) {
 		keyName string
 		client  kmsEncryptDecrypter
 		rand    io.Reader
-		timeout time.Duration
 	}
 	type args struct {
 		plaintext []byte
@@ -90,7 +88,6 @@ func Test_encryptDecrypter_Encrypt(t *testing.T) {
 				keyName: tt.fields.keyName,
 				client:  tt.fields.client,
 				rand:    tt.fields.rand,
-				timeout: tt.fields.timeout,
 			}
 			got, err := e.Encrypt(tt.args.plaintext)
 			if (err != nil) != tt.wantErr {

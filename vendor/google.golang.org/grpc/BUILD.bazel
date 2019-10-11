@@ -15,6 +15,7 @@ go_library(
         "interceptor.go",
         "picker_wrapper.go",
         "pickfirst.go",
+        "preloader.go",
         "proxy.go",
         "resolver_conn_wrapper.go",
         "rpc_util.go",

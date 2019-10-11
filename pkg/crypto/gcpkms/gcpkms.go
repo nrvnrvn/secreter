@@ -94,8 +94,11 @@ type Options struct {
 	KeyRingID        string
 	CryptoKeyID      string
 	CryptoKeyVersion int
-	Credentials      []byte
-	PublicKey        *rsa.PublicKey
+
+	Credentials []byte
+	PublicKey   *rsa.PublicKey
+
+	Timeout time.Duration
 }
 
 // keyName converts options into a key resource ID
@@ -106,13 +109,18 @@ func (o Options) keyName() string {
 	return fmt.Sprintf(keyNameTemplate, o.ProjectID, o.LocationID, o.KeyRingID, o.CryptoKeyID)
 }
 
+func (o *Options) applyDefaults() {
+	if o.Timeout == 0 {
+		o.Timeout = defaultTimeout
+	}
+}
+
 type encryptDecrypter struct {
 	options Options
 
 	keyName string
 	client  kmsEncryptDecrypter
 	rand    io.Reader
-	timeout time.Duration
 }
 
 // Encrypt generates an ephemeral data encryption key, encrypts it via KMS,
@@ -124,10 +132,10 @@ func (e encryptDecrypter) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), e.timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), e.options.Timeout)
 	defer cancel()
 
-	// encrypt DEK
+	// encrypt data encryption key
 	var encryptedKey []byte
 	if e.options.CryptoKeyVersion > 0 {
 		keyVersion, err := e.client.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{Name: e.keyName})
@@ -150,7 +158,7 @@ func (e encryptDecrypter) Encrypt(plaintext []byte) ([]byte, error) {
 
 		ciphertext, err := rsa.EncryptOAEP(shaHash, rand.Reader, e.options.PublicKey, key, nil)
 		if err != nil {
-			return nil, fmt.Errorf("error encrypting DEK: %v", err)
+			return nil, fmt.Errorf("error encrypting data encryption key: %v", err)
 		}
 
 		encryptedKey = ciphertext
@@ -185,7 +193,7 @@ func (e encryptDecrypter) Decrypt(ciphertext []byte) ([]byte, error) {
 	encryptedKeyOffset := headerOffset + int(binary.LittleEndian.Uint16(ciphertext[crypto.HeaderSize:]))
 	encryptedKey := ciphertext[headerOffset:encryptedKeyOffset]
 
-	ctx, cancel := context.WithTimeout(context.Background(), e.timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), e.options.Timeout)
 	defer cancel()
 
 	var key []byte
@@ -208,8 +216,10 @@ func (e encryptDecrypter) Decrypt(ciphertext []byte) ([]byte, error) {
 
 // New returns a new instance of the crypto.EncryptDecrypter. If credentials is nil
 // application default credentials will be used for authenticating.
-func New(ctx context.Context, options Options) (crypto.EncryptDecrypter, error) {
-	client, err := newClient(ctx, options)
+func New(options Options) (crypto.EncryptDecrypter, error) {
+	options.applyDefaults()
+
+	client, err := newClient(context.TODO(), options)
 	if err != nil {
 		return nil, fmt.Errorf("error creating gcp kms client: %v", err)
 	}
@@ -219,8 +229,15 @@ func New(ctx context.Context, options Options) (crypto.EncryptDecrypter, error) 
 		keyName: options.keyName(),
 		client:  client,
 		rand:    rand.Reader,
-		timeout: defaultTimeout,
 	}, nil
+}
+
+func newClient(ctx context.Context, options Options) (*kms.KeyManagementClient, error) {
+	if options.Credentials != nil {
+		return kms.NewKeyManagementClient(ctx, option.WithCredentialsJSON(options.Credentials))
+	}
+
+	return kms.NewKeyManagementClient(ctx)
 }
 
 // GetPublicKey fetches and returns RSA public key from GCP KMS in both decoded and encoded forms.
@@ -257,12 +274,4 @@ func ParsePublicKey(encoded string) (*rsa.PublicKey, error) {
 	}
 
 	return key, nil
-}
-
-func newClient(ctx context.Context, options Options) (*kms.KeyManagementClient, error) {
-	if options.Credentials != nil {
-		return kms.NewKeyManagementClient(ctx, option.WithCredentialsJSON(options.Credentials))
-	}
-
-	return kms.NewKeyManagementClient(ctx)
 }

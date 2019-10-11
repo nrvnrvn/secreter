@@ -25,6 +25,8 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
+		"./pkg/apis/k8s/v1alpha1.AWSCredentials":             schema_pkg_apis_k8s_v1alpha1_AWSCredentials(ref),
+		"./pkg/apis/k8s/v1alpha1.AWSKMS":                     schema_pkg_apis_k8s_v1alpha1_AWSKMS(ref),
 		"./pkg/apis/k8s/v1alpha1.Curve25519":                 schema_pkg_apis_k8s_v1alpha1_Curve25519(ref),
 		"./pkg/apis/k8s/v1alpha1.EncryptedSecret":            schema_pkg_apis_k8s_v1alpha1_EncryptedSecret(ref),
 		"./pkg/apis/k8s/v1alpha1.EncryptedSecretList":        schema_pkg_apis_k8s_v1alpha1_EncryptedSecretList(ref),
@@ -36,6 +38,75 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"./pkg/apis/k8s/v1alpha1.SecretEncryptionProvider":   schema_pkg_apis_k8s_v1alpha1_SecretEncryptionProvider(ref),
 		"./pkg/apis/k8s/v1alpha1.SecretEncryptionStatus":     schema_pkg_apis_k8s_v1alpha1_SecretEncryptionStatus(ref),
 		"./pkg/apis/k8s/v1alpha1.SecretKeySelector":          schema_pkg_apis_k8s_v1alpha1_SecretKeySelector(ref),
+	}
+}
+
+func schema_pkg_apis_k8s_v1alpha1_AWSCredentials(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "AWSCredentials defines a reference to the AWS Access key ID and Secret Access Key in a Secret collocated in the same namespace",
+				Properties: map[string]spec.Schema{
+					"accessKeyID": {
+						SchemaProps: spec.SchemaProps{
+							Description: "AWS Access key ID",
+							Ref:         ref("./pkg/apis/k8s/v1alpha1.SecretKeySelector"),
+						},
+					},
+					"secretAccessKey": {
+						SchemaProps: spec.SchemaProps{
+							Description: "AWS Secret Access Key",
+							Ref:         ref("./pkg/apis/k8s/v1alpha1.SecretKeySelector"),
+						},
+					},
+				},
+				Required: []string{"accessKeyID", "secretAccessKey"},
+			},
+		},
+		Dependencies: []string{
+			"./pkg/apis/k8s/v1alpha1.SecretKeySelector"},
+	}
+}
+
+func schema_pkg_apis_k8s_v1alpha1_AWSKMS(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "AWSKMS defines all the parameters needed for encryption via AWS KMS.",
+				Properties: map[string]spec.Schema{
+					"keyID": {
+						SchemaProps: spec.SchemaProps{
+							Description: "A unique identifier for the customer master key (CMK).\n\nTo specify a CMK, use its key ID, Amazon Resource Name (ARN), alias name, or alias ARN. When using an alias name, prefix it with \"alias/\". To specify a CMK in a different AWS account, you must use the key ARN or alias ARN.\n\nFor example:\n\n   * Key ID: 1234abcd-12ab-34cd-56ef-1234567890ab\n\n   * Key ARN: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab\n\n   * Alias name: alias/ExampleAlias\n\n   * Alias ARN: arn:aws:kms:us-east-2:111122223333:alias/ExampleAlias\n\nTo get the key ID and key ARN for a CMK, use ListKeys or DescribeKey. To get the alias name and alias ARN, use ListAliases.\n\nKeyId is a required field",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"region": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The region to send requests to. This parameter is required and must be configured globally or on a per-client basis unless otherwise noted. A full list of regions is found in the \"Regions and Endpoints\" document.\n\nSee http://docs.aws.amazon.com/general/latest/gr/rande.html for AWS Regions and Endpoints.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"credentials": {
+						SchemaProps: spec.SchemaProps{
+							Description: "List of references to the AWS Access key IDs and Secret Access Keys",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("./pkg/apis/k8s/v1alpha1.AWSCredentials"),
+									},
+								},
+							},
+						},
+					},
+				},
+				Required: []string{"keyID", "credentials"},
+			},
+		},
+		Dependencies: []string{
+			"./pkg/apis/k8s/v1alpha1.AWSCredentials"},
 	}
 }
 
@@ -425,12 +496,18 @@ func schema_pkg_apis_k8s_v1alpha1_SecretEncryptionProvider(ref common.ReferenceC
 							Ref:         ref("./pkg/apis/k8s/v1alpha1.GCPKMS"),
 						},
 					},
+					"awskms": {
+						SchemaProps: spec.SchemaProps{
+							Description: "AWSKMS defines the configuration of the AWS KMS provider",
+							Ref:         ref("./pkg/apis/k8s/v1alpha1.AWSKMS"),
+						},
+					},
 				},
 				Required: []string{"name"},
 			},
 		},
 		Dependencies: []string{
-			"./pkg/apis/k8s/v1alpha1.Curve25519", "./pkg/apis/k8s/v1alpha1.GCPKMS"},
+			"./pkg/apis/k8s/v1alpha1.AWSKMS", "./pkg/apis/k8s/v1alpha1.Curve25519", "./pkg/apis/k8s/v1alpha1.GCPKMS"},
 	}
 }
 

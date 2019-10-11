@@ -16,7 +16,6 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"crypto/rsa"
 	"encoding/hex"
 	"errors"
@@ -26,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +36,7 @@ import (
 	"github.com/amaizfinance/secreter/pkg/apis"
 	k8sv1alpha1 "github.com/amaizfinance/secreter/pkg/apis/k8s/v1alpha1"
 	"github.com/amaizfinance/secreter/pkg/crypto"
+	"github.com/amaizfinance/secreter/pkg/crypto/awskms"
 	"github.com/amaizfinance/secreter/pkg/crypto/curve25519"
 	"github.com/amaizfinance/secreter/pkg/crypto/gcpkms"
 )
@@ -43,6 +44,8 @@ import (
 const (
 	dirFileMode     os.FileMode = 0755
 	regularFileMode os.FileMode = 0644
+
+	defaultKMSTimeout = 5 * time.Second
 )
 
 // interfaces
@@ -441,7 +444,21 @@ func newEncryptUpdater(configName string, provider k8sv1alpha1.SecretEncryptionP
 		err       error
 	)
 
+	// TODO: make proper validation for the config and get rid of it
+	if provider.Curve25519 != nil && provider.GCPKMS != nil ||
+		provider.Curve25519 != nil && provider.AWSKMS != nil ||
+		provider.AWSKMS != nil && provider.GCPKMS != nil {
+		return nil, crypto.ErrMultipleCipherSuites
+	}
+
 	switch {
+	case provider.Curve25519 != nil:
+		decodedKey, err := hex.DecodeString(publicKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode curve25519 public key: %v", err)
+		}
+
+		encrypter = curve25519.New(decodedKey, nil)
 	case provider.GCPKMS != nil:
 		var decodedKey *rsa.PublicKey
 		if len(publicKey) != 0 {
@@ -451,24 +468,27 @@ func newEncryptUpdater(configName string, provider k8sv1alpha1.SecretEncryptionP
 			}
 		}
 
-		encrypter, err = gcpkms.New(context.TODO(), gcpkms.Options{
+		encrypter, err = gcpkms.New(gcpkms.Options{
 			ProjectID:        provider.GCPKMS.ProjectID,
 			LocationID:       provider.GCPKMS.LocationID,
 			KeyRingID:        provider.GCPKMS.KeyRingID,
 			CryptoKeyID:      provider.GCPKMS.CryptoKeyID,
 			CryptoKeyVersion: provider.GCPKMS.CryptoKeyVersion,
 			PublicKey:        decodedKey,
+			Timeout:          defaultKMSTimeout,
 		})
 		if err != nil {
 			return nil, err
 		}
-	case provider.Curve25519 != nil:
-		decodedKey, err := hex.DecodeString(publicKey)
+	case provider.AWSKMS != nil:
+		encrypter, err = awskms.New(awskms.Options{
+			KeyID:   provider.AWSKMS.KeyID,
+			Region:  provider.AWSKMS.Region,
+			Timeout: defaultKMSTimeout,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode curve25519 public key: %v", err)
+			return nil, err
 		}
-
-		encrypter = curve25519.New(decodedKey, nil)
 	default:
 		return nil, crypto.ErrNoCipherSuites
 	}

@@ -1,18 +1,18 @@
 module github.com/amaizfinance/secreter
 
-go 1.12
+go 1.13
 
 require (
-	cloud.google.com/go v0.38.0
-	github.com/NYTimes/gziphandler v1.0.1 // indirect
+	cloud.google.com/go v0.46.3
+	github.com/aws/aws-sdk-go v1.25.10
 	github.com/go-openapi/spec v0.19.0
 	github.com/googleapis/gax-go/v2 v2.0.5
 	github.com/operator-framework/operator-sdk v0.10.0
-	github.com/spf13/cobra v0.0.3
-	github.com/spf13/pflag v1.0.3
-	golang.org/x/crypto v0.0.0-20190404164418-38d8ce5564a5
-	google.golang.org/api v0.8.0
-	google.golang.org/genproto v0.0.0-20190801165951-fa694d86fc64
+	github.com/spf13/cobra v0.0.5
+	github.com/spf13/pflag v1.0.5
+	golang.org/x/crypto v0.0.0-20191010185427-af544f31c8ac
+	google.golang.org/api v0.9.0
+	google.golang.org/genproto v0.0.0-20190911173649-1774047e7e51
 	k8s.io/api v0.0.0-20190612125737-db0771252981
 	k8s.io/apimachinery v0.0.0-20190612125636-6a5db36e93ad
 	k8s.io/client-go v11.0.0+incompatible

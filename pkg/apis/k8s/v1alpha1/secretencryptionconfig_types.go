@@ -46,6 +46,8 @@ type SecretEncryptionProvider struct {
 	Curve25519 *Curve25519 `json:"curve25519,omitempty"`
 	// GCPKMS defines the configuration of the GCP KMS provider
 	GCPKMS *GCPKMS `json:"gcpkms,omitempty"`
+	// AWSKMS defines the configuration of the AWS KMS provider
+	AWSKMS *AWSKMS `json:"awskms,omitempty"`
 }
 
 const (
@@ -90,6 +92,50 @@ type GCPKMS struct {
 	CryptoKeyVersion int `json:"cryptoKeyVersion,omitempty"`
 	// List of references to keys of Secrets containing GCP credential files, see https://cloud.google.com/iam/docs/creating-managing-service-account-keys
 	Credentials []SecretKeySelector `json:"credentials"`
+}
+
+// AWSKMS defines all the parameters needed for encryption via AWS KMS.
+type AWSKMS struct {
+	// A unique identifier for the customer master key (CMK).
+	//
+	// To specify a CMK, use its key ID, Amazon Resource Name (ARN), alias name,
+	// or alias ARN. When using an alias name, prefix it with "alias/". To specify
+	// a CMK in a different AWS account, you must use the key ARN or alias ARN.
+	//
+	// For example:
+	//
+	//    * Key ID: 1234abcd-12ab-34cd-56ef-1234567890ab
+	//
+	//    * Key ARN: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+	//
+	//    * Alias name: alias/ExampleAlias
+	//
+	//    * Alias ARN: arn:aws:kms:us-east-2:111122223333:alias/ExampleAlias
+	//
+	// To get the key ID and key ARN for a CMK, use ListKeys or DescribeKey. To
+	// get the alias name and alias ARN, use ListAliases.
+	//
+	// KeyId is a required field
+	KeyID string `json:"keyID"`
+	// The region to send requests to. This parameter is required and must
+	// be configured globally or on a per-client basis unless otherwise
+	// noted. A full list of regions is found in the "Regions and Endpoints"
+	// document.
+	//
+	// See http://docs.aws.amazon.com/general/latest/gr/rande.html for AWS
+	// Regions and Endpoints.
+	Region string `json:"region,omitempty"`
+	// List of references to the AWS Access key IDs and Secret Access Keys
+	Credentials []AWSCredentials `json:"credentials"`
+}
+
+// AWSCredentials defines a reference to the AWS Access key ID and Secret Access Key
+// in a Secret collocated in the same namespace
+type AWSCredentials struct {
+	// AWS Access key ID
+	AccessKeyID SecretKeySelector `json:"accessKeyID"`
+	// AWS Secret Access Key
+	SecretAccessKey SecretKeySelector `json:"secretAccessKey"`
 }
 
 // SecretKeySelector defines a reference to the specific key in a Secret collocated in the same namespace

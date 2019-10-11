@@ -36,6 +36,7 @@ import (
 
 	k8sv1alpha1 "github.com/amaizfinance/secreter/pkg/apis/k8s/v1alpha1"
 	"github.com/amaizfinance/secreter/pkg/crypto"
+	"github.com/amaizfinance/secreter/pkg/crypto/awskms"
 	"github.com/amaizfinance/secreter/pkg/crypto/curve25519"
 	"github.com/amaizfinance/secreter/pkg/crypto/gcpkms"
 )
@@ -192,37 +193,14 @@ func (r *ReconcileEncryptedSecret) initDecrypters(
 	decrypterSuite := make(map[byte][]crypto.Decrypter)
 
 	for _, provider := range config.Providers {
-		if provider.Curve25519 != nil && provider.GCPKMS != nil {
+		// TODO: make proper validation for the config and get rid of it
+		if provider.Curve25519 != nil && provider.GCPKMS != nil ||
+			provider.Curve25519 != nil && provider.AWSKMS != nil ||
+			provider.AWSKMS != nil && provider.GCPKMS != nil {
 			return nil, crypto.ErrMultipleCipherSuites
 		}
 
 		switch {
-		case provider.GCPKMS != nil:
-			for _, selector := range provider.GCPKMS.Credentials {
-				credStore := new(corev1.Secret)
-				if err := r.client.Get(ctx, types.NamespacedName{
-					Namespace: operatorNamespace,
-					Name:      selector.SecretKeyRef.Name,
-				}, credStore); err != nil {
-					return nil, err
-				}
-
-				decrypter, err := gcpkms.New(ctx, gcpkms.Options{
-					ProjectID:        provider.GCPKMS.ProjectID,
-					LocationID:       provider.GCPKMS.LocationID,
-					KeyRingID:        provider.GCPKMS.KeyRingID,
-					CryptoKeyID:      provider.GCPKMS.CryptoKeyID,
-					CryptoKeyVersion: provider.GCPKMS.CryptoKeyVersion,
-					Credentials:      credStore.Data[selector.SecretKeyRef.Key],
-				})
-				if err != nil {
-					return nil, err
-				}
-
-				decrypterSuite[crypto.GCPKMSXchacha20poly1305] = append(
-					decrypterSuite[crypto.GCPKMSXchacha20poly1305], decrypter,
-				)
-			}
 		case provider.Curve25519 != nil:
 			// fetch the keystore
 			keystore := new(corev1.Secret)
@@ -242,6 +220,64 @@ func (r *ReconcileEncryptedSecret) initDecrypters(
 						keystore.Data[k8sv1alpha1.Curve25519keyStorePublicKeysMapKey][i:i+curve25519.KeySize],
 						keystore.Data[k8sv1alpha1.Curve25519keyStorePrivateKeysMapKey][i:i+curve25519.KeySize],
 					),
+				)
+			}
+		case provider.GCPKMS != nil:
+			for _, selector := range provider.GCPKMS.Credentials {
+				credStore := new(corev1.Secret)
+				if err := r.client.Get(ctx, types.NamespacedName{
+					Namespace: operatorNamespace,
+					Name:      selector.SecretKeyRef.Name,
+				}, credStore); err != nil {
+					return nil, err
+				}
+
+				decrypter, err := gcpkms.New(gcpkms.Options{
+					ProjectID:        provider.GCPKMS.ProjectID,
+					LocationID:       provider.GCPKMS.LocationID,
+					KeyRingID:        provider.GCPKMS.KeyRingID,
+					CryptoKeyID:      provider.GCPKMS.CryptoKeyID,
+					CryptoKeyVersion: provider.GCPKMS.CryptoKeyVersion,
+					Credentials:      credStore.Data[selector.SecretKeyRef.Key],
+				})
+				if err != nil {
+					return nil, err
+				}
+
+				decrypterSuite[crypto.GCPKMSXchacha20poly1305] = append(
+					decrypterSuite[crypto.GCPKMSXchacha20poly1305], decrypter,
+				)
+			}
+		case provider.AWSKMS != nil:
+			for _, credentials := range provider.AWSKMS.Credentials {
+				accessKeyIDSecret := new(corev1.Secret)
+				if err := r.client.Get(ctx, types.NamespacedName{
+					Namespace: operatorNamespace,
+					Name:      credentials.AccessKeyID.SecretKeyRef.Name,
+				}, accessKeyIDSecret); err != nil {
+					return nil, err
+				}
+
+				secretAccessKeySecret := new(corev1.Secret)
+				if err := r.client.Get(ctx, types.NamespacedName{
+					Namespace: operatorNamespace,
+					Name:      credentials.SecretAccessKey.SecretKeyRef.Name,
+				}, secretAccessKeySecret); err != nil {
+					return nil, err
+				}
+
+				decrypter, err := awskms.New(awskms.Options{
+					KeyID:           provider.AWSKMS.KeyID,
+					Region:          provider.AWSKMS.Region,
+					AccessKeyID:     string(accessKeyIDSecret.Data[credentials.AccessKeyID.SecretKeyRef.Key]),
+					SecretAccessKey: string(secretAccessKeySecret.Data[credentials.SecretAccessKey.SecretKeyRef.Key]),
+				})
+				if err != nil {
+					return nil, err
+				}
+
+				decrypterSuite[crypto.AWSKMSXchacha20poly1305] = append(
+					decrypterSuite[crypto.AWSKMSXchacha20poly1305], decrypter,
 				)
 			}
 		default:

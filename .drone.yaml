@@ -4,7 +4,7 @@ name: secreter
 steps:
 
 - name: test
-  image: l.gcr.io/google/bazel:0.28.1
+  image: l.gcr.io/google/bazel:1.0.0
   commands:
   - ./hack/build/test.sh
   volumes:
@@ -12,7 +12,7 @@ steps:
     path: /root/.cache
 
 - name: build and push docker image
-  image: l.gcr.io/google/bazel:0.28.1
+  image: l.gcr.io/google/bazel:1.0.0
   environment:
     DOCKER_AUTH:
       from_secret: docker-config-json
@@ -27,7 +27,7 @@ steps:
     - refs/tags/v*
 
 - name: build binaries
-  image: l.gcr.io/google/bazel:0.28.1
+  image: l.gcr.io/google/bazel:1.0.0
   commands:
   - ./hack/build/binaries.sh
   volumes:
@@ -57,6 +57,6 @@ volumes:
   temp: {}
 ---
 kind: signature
-hmac: 7373b011bd1cc7a99f8084d82be05ac15a1546bf7d158af8e39eac7a01e29e61
+hmac: deaf1c78cc34e5479f2a1794a44325331a0aa7d71a72d23a94a8f18382c2896c
 
 ...

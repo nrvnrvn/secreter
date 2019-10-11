@@ -23,6 +23,7 @@ import (
 const (
 	Curve25519Xchacha20poly1305 byte = iota
 	GCPKMSXchacha20poly1305
+	AWSKMSXchacha20poly1305
 
 	HeaderSize = 1
 )

@@ -146,40 +146,6 @@ func (r *ReconcileSecretEncryptionConfig) Reconcile(request reconcile.Request) (
 	primaryProvider := config.Providers[0]
 
 	switch {
-	case primaryProvider.GCPKMS != nil && primaryProvider.GCPKMS.CryptoKeyVersion > 0:
-		// fetch the first available public key
-		for _, selector := range primaryProvider.GCPKMS.Credentials {
-			credStore := new(corev1.Secret)
-			if err := r.client.Get(ctx, types.NamespacedName{
-				Namespace: operatorNamespace,
-				Name:      selector.SecretKeyRef.Name,
-			}, credStore); err != nil {
-				logger.V(1).Info(
-					"failed to fetch credentials for gcp provider",
-					"provider", primaryProvider.Name,
-					"secret", selector.SecretKeyRef.Name,
-					"key", selector.SecretKeyRef.Key,
-				)
-				continue
-			}
-			_, publicKey, err := gcpkms.GetPublicKey(ctx, gcpkms.Options{
-				ProjectID:        primaryProvider.GCPKMS.ProjectID,
-				LocationID:       primaryProvider.GCPKMS.LocationID,
-				KeyRingID:        primaryProvider.GCPKMS.KeyRingID,
-				CryptoKeyID:      primaryProvider.GCPKMS.CryptoKeyID,
-				CryptoKeyVersion: primaryProvider.GCPKMS.CryptoKeyVersion,
-				Credentials:      credStore.Data[selector.SecretKeyRef.Key],
-			})
-			if err != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to fetch public key: %v", err)
-			}
-
-			config.Status.PublicKey = publicKey
-			break
-		}
-	case primaryProvider.GCPKMS != nil && primaryProvider.GCPKMS.CryptoKeyVersion == 0:
-		// no public key here
-		config.Status.PublicKey = ""
 	case primaryProvider.Curve25519 != nil:
 		// deal with Curve25519
 		secret := new(corev1.Secret)
@@ -239,6 +205,40 @@ func (r *ReconcileSecretEncryptionConfig) Reconcile(request reconcile.Request) (
 		// TODO: create a CronJob for rotating keys
 
 		config.Status.PublicKey = hex.EncodeToString(secret.Data[k8sv1alpha1.Curve25519keyStorePublicKeysMapKey][:curve25519.KeySize])
+	case primaryProvider.GCPKMS != nil && primaryProvider.GCPKMS.CryptoKeyVersion > 0:
+		// fetch the first available public key
+		for _, selector := range primaryProvider.GCPKMS.Credentials {
+			credStore := new(corev1.Secret)
+			if err := r.client.Get(ctx, types.NamespacedName{
+				Namespace: operatorNamespace,
+				Name:      selector.SecretKeyRef.Name,
+			}, credStore); err != nil {
+				logger.V(1).Info(
+					"failed to fetch credentials for gcp provider",
+					"provider", primaryProvider.Name,
+					"secret", selector.SecretKeyRef.Name,
+					"key", selector.SecretKeyRef.Key,
+				)
+				continue
+			}
+			_, publicKey, err := gcpkms.GetPublicKey(ctx, gcpkms.Options{
+				ProjectID:        primaryProvider.GCPKMS.ProjectID,
+				LocationID:       primaryProvider.GCPKMS.LocationID,
+				KeyRingID:        primaryProvider.GCPKMS.KeyRingID,
+				CryptoKeyID:      primaryProvider.GCPKMS.CryptoKeyID,
+				CryptoKeyVersion: primaryProvider.GCPKMS.CryptoKeyVersion,
+				Credentials:      credStore.Data[selector.SecretKeyRef.Key],
+			})
+			if err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to fetch public key: %v", err)
+			}
+
+			config.Status.PublicKey = publicKey
+			break
+		}
+	default:
+		// no public key here
+		config.Status.PublicKey = ""
 	}
 
 	if err := r.client.Status().Update(ctx, config); err != nil {

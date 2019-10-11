@@ -4,6 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = [
         "grpclb.go",
+        "grpclb_config.go",
         "grpclb_picker.go",
         "grpclb_remote_balancer.go",
         "grpclb_util.go",
@@ -17,6 +18,7 @@ go_library(
         "//vendor/google.golang.org/grpc:go_default_library",
         "//vendor/google.golang.org/grpc/balancer:go_default_library",
         "//vendor/google.golang.org/grpc/balancer/grpclb/grpc_lb_v1:go_default_library",
+        "//vendor/google.golang.org/grpc/balancer/roundrobin:go_default_library",
         "//vendor/google.golang.org/grpc/codes:go_default_library",
         "//vendor/google.golang.org/grpc/connectivity:go_default_library",
         "//vendor/google.golang.org/grpc/credentials:go_default_library",
