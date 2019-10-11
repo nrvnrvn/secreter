@@ -44,7 +44,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -98,7 +97,6 @@ type encryptDecrypter struct {
 	options Options
 
 	client kmsEncryptDecrypter
-	rand   io.Reader
 }
 
 // Encrypt generates an ephemeral data encryption key, encrypts it via KMS,
